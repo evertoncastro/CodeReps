@@ -1,0 +1,2 @@
+# Sem dependências externas: o runner usa apenas a stdlib (unittest, subprocess).
+# Os desafios são gerados pelo assistente nesta sessão, não via API.
