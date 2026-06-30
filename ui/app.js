@@ -4,10 +4,12 @@ let editor = null;
 let currentLevel = null;
 let levels = [];
 
-// File explorer state.
-let files = [];            // [{id, label, editable}]
-let currentFile = null;    // id of the file shown in the editor
-let solutionCode = "";     // source of truth for solution.py (survives tab switches)
+// File state.
+let files = [];             // openable files: [{id, label, editable}]
+let openTabs = ["solution"]; // ids open as editor tabs; solution is always present
+let activeTab = "solution";  // focused tab id
+let solutionCode = "";       // source of truth for solution.py (survives tab switches)
+const contentCache = {};     // id -> content for read-only files
 
 // ---- Monaco editor ----
 require.config({
@@ -25,9 +27,8 @@ function initEditor(code) {
         minimap: { enabled: false },
         fontSize: 13,
       });
-      // Keep the solution buffer in sync while it is the active file.
       editor.onDidChangeModelContent(() => {
-        if (currentFile === "solution") solutionCode = editor.getValue();
+        if (activeTab === "solution") solutionCode = editor.getValue();
       });
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runTests);
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveSolution);
@@ -47,22 +48,26 @@ async function loadState() {
   levels = state.levels;
   currentLevel = state.current;
   solutionCode = state.solution || "";
-  renderTabs();
+  renderLevelTabs();
   if (currentLevel) await loadLevel(currentLevel);
   if (!editor) await initEditor(solutionCode);
+  await refreshFiles();
+  setActive("solution");
+}
+
+async function refreshFiles() {
   files = await api("/api/files");
-  renderFileTabs();
-  await openFile("solution");
+  renderExplorer();
 }
 
 async function loadLevel(n) {
   currentLevel = n;
-  renderTabs();
+  renderLevelTabs();
   const data = await api(`/api/level/${n}`);
   document.getElementById("readme").innerHTML = marked.parse(data.readme_md || "");
 }
 
-function renderTabs() {
+function renderLevelTabs() {
   const nav = document.getElementById("level-tabs");
   nav.innerHTML = "";
   levels.forEach((n) => {
@@ -74,45 +79,85 @@ function renderTabs() {
   });
 }
 
-// ---- file explorer ----
-function renderFileTabs() {
+// ---- left explorer ----
+function renderExplorer() {
+  const list = document.getElementById("file-list");
+  list.innerHTML = "";
+  files.forEach((f) => {
+    const li = document.createElement("li");
+    li.textContent = f.label;
+    li.className = "file-item";
+    if (f.id === activeTab) li.classList.add("active");
+    else if (openTabs.includes(f.id)) li.classList.add("open");
+    if (!f.editable) li.classList.add("readonly");
+    li.onclick = () => openFile(f.id);
+    list.appendChild(li);
+  });
+}
+
+// ---- center open tabs ----
+function renderOpenTabs() {
   const bar = document.getElementById("file-tabs");
   bar.innerHTML = "";
-  files.forEach((f) => {
-    const b = document.createElement("button");
-    b.className = "file-tab" + (f.editable ? "" : " readonly");
-    b.textContent = f.label + (f.editable ? "" : "  (read-only)");
-    b.dataset.id = f.id;
-    if (f.id === currentFile) b.classList.add("active");
-    b.onclick = () => openFile(f.id);
-    bar.appendChild(b);
+  openTabs.forEach((id) => {
+    const meta = files.find((f) => f.id === id) || { label: id, editable: id === "solution" };
+    const tab = document.createElement("span");
+    tab.className = "file-tab" + (id === activeTab ? " active" : "");
+    const name = document.createElement("button");
+    name.className = "file-tab-name";
+    name.textContent = meta.label;
+    name.onclick = () => setActive(id);
+    tab.appendChild(name);
+    if (id !== "solution") {
+      const close = document.createElement("button");
+      close.className = "file-tab-close";
+      close.textContent = "×";
+      close.title = "Close";
+      close.onclick = (e) => { e.stopPropagation(); closeFile(id); };
+      tab.appendChild(close);
+    }
+    bar.appendChild(tab);
   });
 }
 
 async function openFile(id) {
-  const meta = files.find((f) => f.id === id);
-  if (!meta || !editor) return;
+  if (!openTabs.includes(id)) openTabs.push(id);
+  await setActive(id);
+}
 
-  // Persist edits to the solution buffer before leaving it.
-  if (currentFile === "solution") solutionCode = editor.getValue();
+async function setActive(id) {
+  const meta = files.find((f) => f.id === id) || { editable: id === "solution" };
+  if (!editor) return;
+  if (activeTab === "solution") solutionCode = editor.getValue();
 
   let content;
   if (id === "solution") {
     content = solutionCode;
+  } else if (contentCache[id] !== undefined) {
+    content = contentCache[id];
   } else {
     const data = await api(`/api/file/${id}`);
     content = data.content || "";
+    contentCache[id] = content;
   }
 
-  currentFile = id;
+  activeTab = id;
   editor.setValue(content);
   editor.updateOptions({ readOnly: !meta.editable });
-  renderFileTabs();
+  renderOpenTabs();
+  renderExplorer();
 }
 
-// ---- actions (always operate on the solution, never the viewed test) ----
+function closeFile(id) {
+  if (id === "solution") return;
+  openTabs = openTabs.filter((t) => t !== id);
+  if (activeTab === id) setActive(openTabs[openTabs.length - 1] || "solution");
+  else { renderOpenTabs(); renderExplorer(); }
+}
+
+// ---- actions (always operate on the solution buffer) ----
 function syncSolution() {
-  if (currentFile === "solution") solutionCode = editor.getValue();
+  if (activeTab === "solution") solutionCode = editor.getValue();
 }
 
 async function saveSolution() {
@@ -133,12 +178,10 @@ async function runTests() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level: currentLevel, code: solutionCode }),
   });
-  // A passing run may unlock the next level: refresh level and file tabs.
   if (Array.isArray(data.unlocked)) {
     levels = data.unlocked;
-    renderTabs();
-    files = await api("/api/files");
-    renderFileTabs();
+    renderLevelTabs();
+    await refreshFiles();
   }
   renderResults(data);
 }
@@ -150,7 +193,7 @@ function renderResults(data) {
   if (data.unlocked_now) {
     const u = document.createElement("div");
     u.className = "summary ok";
-    u.textContent = `🎉 Level ${data.unlocked_now} unlocked! Click its tab.`;
+    u.textContent = `🎉 Level ${data.unlocked_now} unlocked!`;
     body.appendChild(u);
   }
 

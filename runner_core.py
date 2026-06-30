@@ -3,13 +3,15 @@
 Both the CLI (main.py) and the web UI (ui.py) import this module so that tests
 run the exact same way against the same files on disk.
 
-Layout (one challenge at a time):
-    workspace/challenge_library/
-        solution.py            evolving solution (the candidate edits this)
-        levelN/README.md       requirements
-        levelN/public_test.py  public tests (gate)
-        levelN/hidden_test.py  hidden tests (feedback)
-        levelN/__init__.py     package marker
+Flat layout (one challenge at a time), all under workspace/challenge_library/:
+    solution.py                 evolving solution (the candidate edits this)
+    level_N.md                  requirements for level N
+    level_N_public_tests.py     public tests (gate)
+    level_N_hidden_tests.py     hidden tests (feedback)
+
+Test modules are plain top-level modules (no packages); they import the
+candidate's code via `from solution import ...` and are run with
+cwd=challenge_library so `solution` and the module names resolve.
 """
 
 import json
@@ -25,28 +27,23 @@ SOLUTION = LIB / "solution.py"
 HARNESS = BASE / "test_harness.py"
 TIMEOUT = int(os.environ.get("ICA_TEST_TIMEOUT", "30"))
 
-_LEVEL_RE = re.compile(r"^level(\d+)")
+_PUBLIC_FILE_RE = re.compile(r"^level_(\d+)_public_tests\.py$")
+_TEST_NAME_RE = re.compile(r"^level_(\d+)_")
 
 
 def available_levels() -> list[int]:
     if not LIB.is_dir():
         return []
     levels = []
-    for p in LIB.glob("level*"):
-        suffix = p.name[len("level"):]
-        if p.is_dir() and suffix.isdigit():
-            levels.append(int(suffix))
+    for p in LIB.glob("level_*_public_tests.py"):
+        m = _PUBLIC_FILE_RE.match(p.name)
+        if m:
+            levels.append(int(m.group(1)))
     return sorted(levels)
 
 
-def ensure_package(level: int) -> None:
-    init = LIB / f"level{level}" / "__init__.py"
-    if init.parent.is_dir() and not init.exists():
-        init.write_text("")
-
-
 def level_of(test_name: str) -> int | None:
-    m = _LEVEL_RE.match(test_name)
+    m = _TEST_NAME_RE.match(test_name)
     return int(m.group(1)) if m else None
 
 
@@ -60,19 +57,19 @@ def write_solution(code: str) -> None:
 
 
 def read_readme(level: int) -> str:
-    f = LIB / f"level{level}" / "README.md"
+    f = LIB / f"level_{level}.md"
     return f.read_text() if f.exists() else ""
 
 
 def read_public_source(level: int) -> str:
-    f = LIB / f"level{level}" / "public_test.py"
+    f = LIB / f"level_{level}_public_tests.py"
     return f.read_text() if f.exists() else ""
 
 
 def list_files(levels: list[int] | None = None) -> list[dict]:
-    """Files exposed in the UI file explorer.
+    """Files exposed in the UI explorer.
 
-    Only solution.py (editable) and each level's public_test.py (read-only) are
+    Only solution.py (editable) and each level's public tests (read-only) are
     listed. Hidden test sources are NEVER exposed. Pass `levels` to restrict to
     the currently unlocked levels (defaults to all authored levels).
     """
@@ -80,9 +77,9 @@ def list_files(levels: list[int] | None = None) -> list[dict]:
         levels = available_levels()
     files = [{"id": "solution", "label": "solution.py", "editable": True}]
     for n in levels:
-        if (LIB / f"level{n}" / "public_test.py").exists():
+        if (LIB / f"level_{n}_public_tests.py").exists():
             files.append(
-                {"id": f"public-{n}", "label": f"level{n}/public_test.py", "editable": False}
+                {"id": f"public-{n}", "label": f"level_{n}_public_tests.py", "editable": False}
             )
     return files
 
@@ -93,7 +90,7 @@ def _resolve_file(file_id: str) -> Path | None:
         return SOLUTION
     m = re.fullmatch(r"public-(\d+)", file_id or "")
     if m:
-        return LIB / f"level{m.group(1)}" / "public_test.py"
+        return LIB / f"level_{m.group(1)}_public_tests.py"
     return None
 
 
@@ -137,9 +134,7 @@ def _run_modules(modules: list[str]) -> dict:
 
 def run_public(target: int) -> dict:
     """Run public tests for levels 1..target (regression). Gate = all pass."""
-    for lvl in range(1, target + 1):
-        ensure_package(lvl)
-    modules = [f"level{lvl}.public_test" for lvl in range(1, target + 1)]
+    modules = [f"level_{lvl}_public_tests" for lvl in range(1, target + 1)]
     result = _run_modules(modules)
     for t in result["tests"]:
         t["level"] = level_of(t["name"])
@@ -149,11 +144,9 @@ def run_public(target: int) -> dict:
 
 def run_hidden(level: int) -> dict:
     """Run hidden tests for a single level (feedback, non-blocking)."""
-    hidden = LIB / f"level{level}" / "hidden_test.py"
-    if not hidden.exists():
+    if not (LIB / f"level_{level}_hidden_tests.py").exists():
         return {"passed": True, "tests": [], "passed_count": 0, "total": 0}
-    ensure_package(level)
-    result = _run_modules([f"level{level}.hidden_test"])
+    result = _run_modules([f"level_{level}_hidden_tests"])
     for t in result["tests"]:
         t["short"] = t["name"].rsplit(".", 1)[-1]
     result["passed_count"] = sum(1 for t in result["tests"] if t["status"] == "ok")

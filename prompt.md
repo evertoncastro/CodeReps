@@ -46,22 +46,23 @@ Um Senior forte deve achar desafiador mas factível em ~70 min.
 
 ## Layout em disco
 
-Um desafio por vez vive em `workspace/challenge_library/`:
+Um desafio por vez vive em `workspace/challenge_library/`, com arquivos planos
+(sem subdiretórios por nível):
 
 ```
 workspace/challenge_library/
-  solution.py            # a única solução, evolui nível a nível (o candidato edita)
-  level1/
-    README.md            # requisitos do nível (legível)
-    public_test.py       # testes públicos (unittest, runnable)
-    hidden_test.py       # testes ocultos (unittest, runnable)
-    __init__.py          # marcador de pacote (pode ser vazio)
-  level2/  ...  level4/  # criados só após o candidato passar o nível anterior
+  solution.py                  # a única solução, evolui nível a nível (o candidato edita)
+  level_1.md                   # requisitos do nível 1 (legível)
+  level_1_public_tests.py      # testes públicos do nível 1 (unittest, runnable)
+  level_1_hidden_tests.py      # testes ocultos do nível 1 (unittest, runnable)
+  level_2.md  level_2_public_tests.py  level_2_hidden_tests.py
+  ...  level_4_*               # criados só após o candidato passar o nível anterior
 ```
 
-No Level 1, o conteúdo do starter da interface também é gravado em `solution.py`
-para o candidato começar. Nos níveis seguintes, descreva os novos métodos no
-`README.md` (o candidato estende o mesmo `solution.py`).
+Os módulos de teste são módulos top-level (sem pacote/`__init__.py`), rodados com
+`cwd=challenge_library`. No Level 1, o starter da interface também é gravado em
+`solution.py` para o candidato começar. Nos níveis seguintes, descreva os novos
+métodos no `level_N.md` (o candidato estende o mesmo `solution.py`).
 
 ## Regras de teste (por nível)
 
