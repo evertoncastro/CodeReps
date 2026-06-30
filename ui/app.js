@@ -133,12 +133,26 @@ async function runTests() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level: currentLevel, code: solutionCode }),
   });
+  // A passing run may unlock the next level: refresh level and file tabs.
+  if (Array.isArray(data.unlocked)) {
+    levels = data.unlocked;
+    renderTabs();
+    files = await api("/api/files");
+    renderFileTabs();
+  }
   renderResults(data);
 }
 
 function renderResults(data) {
   const body = document.getElementById("results-body");
   body.innerHTML = "";
+
+  if (data.unlocked_now) {
+    const u = document.createElement("div");
+    u.className = "summary ok";
+    u.textContent = `🎉 Level ${data.unlocked_now} unlocked! Click its tab.`;
+    body.appendChild(u);
+  }
 
   const pub = data.public;
   const sum = document.createElement("div");

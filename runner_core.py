@@ -69,14 +69,17 @@ def read_public_source(level: int) -> str:
     return f.read_text() if f.exists() else ""
 
 
-def list_files() -> list[dict]:
+def list_files(levels: list[int] | None = None) -> list[dict]:
     """Files exposed in the UI file explorer.
 
     Only solution.py (editable) and each level's public_test.py (read-only) are
-    listed. Hidden test sources are NEVER exposed.
+    listed. Hidden test sources are NEVER exposed. Pass `levels` to restrict to
+    the currently unlocked levels (defaults to all authored levels).
     """
+    if levels is None:
+        levels = available_levels()
     files = [{"id": "solution", "label": "solution.py", "editable": True}]
-    for n in available_levels():
+    for n in levels:
         if (LIB / f"level{n}" / "public_test.py").exists():
             files.append(
                 {"id": f"public-{n}", "label": f"level{n}/public_test.py", "editable": False}
