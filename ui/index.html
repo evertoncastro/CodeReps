@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ICA Mock Assessment</title>
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/ui/style.css" />
 </head>
 <body>
   <header id="topbar">
-    <span class="brand">ICA Mock Assessment</span>
+    <a class="brand" href="/" title="All challenges">← <span id="brand-title">ICA</span></a>
     <nav id="level-tabs"></nav>
     <span class="spacer"></span>
     <span id="timer" class="timer" title="Time remaining">--:--</span>
@@ -48,6 +48,6 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <!-- Monaco (defines AMD require/define) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
-  <script src="/app.js"></script>
+  <script src="/ui/app.js"></script>
 </body>
 </html>

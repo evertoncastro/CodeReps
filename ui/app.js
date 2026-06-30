@@ -1,5 +1,9 @@
 "use strict";
 
+// Challenge id comes from the URL path, e.g. /warehouse_inventory.
+const CHALLENGE = location.pathname.replace(/^\/+|\/+$/g, "");
+const API = `/api/${CHALLENGE}`;
+
 let editor = null;
 let currentLevel = null;
 let levels = [];
@@ -87,11 +91,14 @@ async function api(path, opts) {
 }
 
 async function loadState() {
-  const state = await api("/api/state");
+  const state = await api(`${API}/state`);
   levels = state.levels;
   currentLevel = state.current;
   solutionCode = state.solution || "";
-  if (state.title) document.querySelector(".brand").textContent = state.title;
+  if (state.title) {
+    document.getElementById("brand-title").textContent = state.title;
+    document.title = `${state.title} — ICA`;
+  }
   startTimer(state.remaining_seconds);
   renderLevelTabs();
   if (currentLevel) await loadLevel(currentLevel);
@@ -101,14 +108,14 @@ async function loadState() {
 }
 
 async function refreshFiles() {
-  files = await api("/api/files");
+  files = await api(`${API}/files`);
   renderExplorer();
 }
 
 async function loadLevel(n) {
   currentLevel = n;
   renderLevelTabs();
-  const data = await api(`/api/level/${n}`);
+  const data = await api(`${API}/level/${n}`);
   document.getElementById("readme").innerHTML = marked.parse(data.readme_md || "");
 }
 
@@ -181,7 +188,7 @@ async function setActive(id) {
   } else if (contentCache[id] !== undefined) {
     content = contentCache[id];
   } else {
-    const data = await api(`/api/file/${id}`);
+    const data = await api(`${API}/file/${id}`);
     content = data.content || "";
     contentCache[id] = content;
   }
@@ -208,7 +215,7 @@ function syncSolution() {
 async function saveSolution() {
   if (locked) return;
   syncSolution();
-  const res = await api("/api/save", {
+  const res = await api(`${API}/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code: solutionCode }),
@@ -221,7 +228,7 @@ async function runTests() {
   syncSolution();
   const body = document.getElementById("results-body");
   body.innerHTML = '<span class="muted">Running…</span>';
-  const data = await api("/api/run", {
+  const data = await api(`${API}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level: currentLevel, code: solutionCode }),

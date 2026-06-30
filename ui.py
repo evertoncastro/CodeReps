@@ -1,20 +1,24 @@
 #!/usr/bin/env python3
-"""Local web IDE for the ICA mock assessment (single user, runs on your machine).
+"""Local web IDE for ICA mock assessments (single user, runs on your machine).
 
     python ui.py            # serve at http://localhost:5000
 
-Provides a REST API to read challenge state, save solution.py, and run tests
-(structured pass/fail), reusing runner_core (same execution path as the CLI).
+Routes:
+    /                       challenge list (landing page)
+    /<challenge>            the IDE for that challenge (e.g. /warehouse_inventory)
+    /ui/<file>             static frontend assets
+    /api/challenges         list challenges + progress
+    /api/<challenge>/...    per-challenge API (state, level, file, save, run)
 
-Progression is gated: only unlocked levels (up to completed + 1) are exposed.
-Hidden test sources are never served. Tests run in a subprocess via runner_core.
+Progression is gated per challenge: only unlocked levels are exposed and, once
+the timebox expires, run/save are rejected. Hidden test sources are never served.
 """
 
 import os
 import re
 import time
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory
 
 import progress
 import runner_core as core
@@ -26,115 +30,154 @@ PORT = int(os.environ.get("ICA_PORT", "5000"))
 app = Flask(__name__, static_folder=None)
 
 
-def unlocked_levels() -> list[int]:
+def _require(challenge: str) -> None:
+    if not core.is_challenge(challenge):
+        abort(404)
+
+
+def unlocked_levels(challenge: str) -> list[int]:
     """Levels the candidate may currently see: 1..(completed + 1), if authored."""
-    completed = progress.get_completed()
-    return [n for n in core.available_levels() if n <= completed + 1]
+    completed = progress.get_completed(challenge)
+    return [n for n in core.available_levels(challenge) if n <= completed + 1]
 
 
-def remaining_seconds() -> int:
-    """Seconds left in the challenge timebox (0 once expired). Starts the timer."""
-    meta = core.read_challenge_meta()
-    started = progress.ensure_started()
+def remaining_seconds(challenge: str) -> int:
+    """Seconds left in the timebox (0 once expired). Starts the timer."""
+    meta = core.read_challenge_meta(challenge)
+    started = progress.ensure_started(challenge)
     timebox = int(meta.get("timebox_minutes", 60)) * 60
     return max(0, int(timebox - (time.time() - started)))
 
 
-# ----- static frontend -----
+# ----- pages + static -----
 
 @app.get("/")
-def index():
-    return send_from_directory(UI_DIR, "index.html")
+def home():
+    return send_from_directory(UI_DIR, "challenges.html")
 
 
-@app.get("/<path:filename>")
+@app.get("/ui/<path:filename>")
 def static_files(filename: str):
     return send_from_directory(UI_DIR, filename)
 
 
-# ----- REST API -----
+@app.get("/<challenge>")
+def ide(challenge: str):
+    _require(challenge)
+    return send_from_directory(UI_DIR, "index.html")
 
-@app.get("/api/state")
-def state():
-    levels = unlocked_levels()
-    meta = core.read_challenge_meta()
+
+# ----- API -----
+
+@app.get("/api/challenges")
+def challenges():
+    out = []
+    for c in core.list_challenges():
+        cid = c["id"]
+        started = progress.get_started_at(cid)
+        meta_remaining = None
+        if started is not None:
+            timebox = int(c.get("timebox_minutes") or 60) * 60
+            meta_remaining = max(0, int(timebox - (time.time() - started)))
+        out.append(
+            {
+                **c,
+                "completed": progress.get_completed(cid),
+                "started": started is not None,
+                "remaining_seconds": meta_remaining,
+            }
+        )
+    return jsonify(out)
+
+
+@app.get("/api/<challenge>/state")
+def state(challenge: str):
+    _require(challenge)
+    levels = unlocked_levels(challenge)
+    meta = core.read_challenge_meta(challenge)
     return jsonify(
         {
+            "challenge": challenge,
             "levels": levels,
             "current": levels[-1] if levels else None,
-            "completed": progress.get_completed(),
-            "authored": core.available_levels(),
-            "solution": core.read_solution(),
+            "completed": progress.get_completed(challenge),
+            "authored": core.available_levels(challenge),
+            "solution": core.read_solution(challenge),
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
-            "remaining_seconds": remaining_seconds(),
+            "remaining_seconds": remaining_seconds(challenge),
         }
     )
 
 
-@app.get("/api/level/<int:n>")
-def level(n: int):
-    if n not in unlocked_levels():
+@app.get("/api/<challenge>/level/<int:n>")
+def level(challenge: str, n: int):
+    _require(challenge)
+    if n not in unlocked_levels(challenge):
         return jsonify({"error": "locked"}), 404
     return jsonify(
         {
             "level": n,
-            "readme_md": core.read_readme(n),
-            "public_test_src": core.read_public_source(n),
+            "readme_md": core.read_readme(challenge, n),
+            "public_test_src": core.read_public_source(challenge, n),
         }
     )
 
 
-@app.get("/api/files")
-def files():
-    return jsonify(core.list_files(unlocked_levels()))
+@app.get("/api/<challenge>/files")
+def files(challenge: str):
+    _require(challenge)
+    return jsonify(core.list_files(challenge, unlocked_levels(challenge)))
 
 
-@app.get("/api/file/<file_id>")
-def file(file_id: str):
+@app.get("/api/<challenge>/file/<file_id>")
+def file(challenge: str, file_id: str):
+    _require(challenge)
     m = re.fullmatch(r"public-(\d+)", file_id)
-    if m and int(m.group(1)) not in unlocked_levels():
+    if m and int(m.group(1)) not in unlocked_levels(challenge):
         return jsonify({"error": "locked"}), 404
-    content = core.read_file(file_id)
+    content = core.read_file(challenge, file_id)
     if content is None:
         return jsonify({"error": "not found"}), 404
     return jsonify({"id": file_id, "content": content})
 
 
-@app.post("/api/save")
-def save():
-    if remaining_seconds() <= 0:
+@app.post("/api/<challenge>/save")
+def save(challenge: str):
+    _require(challenge)
+    if remaining_seconds(challenge) <= 0:
         return jsonify({"error": "time_up"}), 403
     data = request.get_json(force=True)
-    core.write_solution(data.get("code", ""))
+    core.write_solution(challenge, data.get("code", ""))
     return jsonify({"ok": True})
 
 
-@app.post("/api/run")
-def run():
-    if remaining_seconds() <= 0:
+@app.post("/api/<challenge>/run")
+def run(challenge: str):
+    _require(challenge)
+    if remaining_seconds(challenge) <= 0:
         return jsonify({"error": "time_up", "remaining_seconds": 0}), 403
     data = request.get_json(force=True)
     target = int(data.get("level", 1))
-    if target not in unlocked_levels():
+    if target not in unlocked_levels(challenge):
         return jsonify({"error": "level locked"}), 400
     if "code" in data:
-        core.write_solution(data["code"])
+        core.write_solution(challenge, data["code"])
 
-    unlocked_before = set(unlocked_levels())
-    public = core.run_public(target)
-    hidden = core.run_hidden(target)
+    unlocked_before = set(unlocked_levels(challenge))
+    public = core.run_public(challenge, target)
+    hidden = core.run_hidden(challenge, target)
 
     if public["passed"]:
-        progress.set_completed(target)
+        progress.set_completed(target, challenge)
 
-    unlocked = unlocked_levels()
+    unlocked = unlocked_levels(challenge)
     newly = sorted(set(unlocked) - unlocked_before)
     return jsonify(
         {
             "public": public,
             "hidden": hidden,
-            "completed": progress.get_completed(),
+            "completed": progress.get_completed(challenge),
             "unlocked": unlocked,
             "unlocked_now": newly[-1] if newly else None,
         }

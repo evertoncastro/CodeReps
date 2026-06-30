@@ -29,8 +29,30 @@ html, body {
   border-bottom: 1px solid var(--border);
 }
 
-.brand { font-weight: 600; }
+.brand { font-weight: 600; color: var(--text); text-decoration: none; }
+a.brand:hover { color: #fff; }
 .spacer { flex: 1; }
+
+/* Challenge list (landing) */
+#challenge-list {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.challenge-card {
+  display: block;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.challenge-card:hover { border-color: var(--accent); }
+.challenge-card h2 { margin: 0 0 10px; font-size: 16px; }
+.challenge-card .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.challenge-card .status { color: var(--accent); }
 
 .timer {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

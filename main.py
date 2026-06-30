@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """ICA mock assessment runner (CLI) — runs local tests, with NO LLM.
 
-Challenges are authored by the assistant (this session) as files under
-workspace/challenge_library/. The solution evolves in a single file:
-challenge_library/solution.py. See runner_core for the on-disk layout.
+Challenges live under challenges/<name>/ (see runner_core). The solution evolves
+in challenges/<name>/solution.py.
 
 Usage:
-    python main.py            # run the highest available level (with regression)
-    python main.py 2          # run up to level 2 (public 1..2 + hidden 2)
-    python main.py --list     # list available levels
+    python main.py                       # if exactly one challenge, run its top level
+    python main.py <challenge>           # run that challenge's highest level
+    python main.py <challenge> 2         # run up to level 2 (public 1..2 + hidden 2)
+    python main.py --list                # list challenges
 """
 
 import sys
@@ -29,26 +29,35 @@ def _print_tests(tests: list[dict]) -> None:
 
 def main() -> None:
     args = sys.argv[1:]
-    levels = core.available_levels()
+    challenges = [c["id"] for c in core.list_challenges()]
 
     if "--list" in args:
-        print("Available levels:", levels or "(none)")
+        print("Challenges:", challenges or "(none)")
         return
 
-    if not levels:
-        print(f"No levels found under {core.LIB}.")
-        print("Ask the assistant to generate a challenge first.")
+    if not challenges:
+        print(f"No challenges found under {core.LIBRARY}.")
         sys.exit(1)
 
-    if not core.SOLUTION.exists():
-        print(f"Error: {core.SOLUTION} does not exist. Implement your solution there.")
+    # Optional first arg = challenge id.
+    if args and args[0] in challenges:
+        challenge = args.pop(0)
+    elif len(challenges) == 1:
+        challenge = challenges[0]
+    else:
+        print(f"Specify a challenge. Available: {challenges}")
+        sys.exit(1)
+
+    levels = core.available_levels(challenge)
+    if not levels:
+        print(f"No levels found for challenge '{challenge}'.")
         sys.exit(1)
 
     if args:
         try:
             target = int(args[0])
         except ValueError:
-            print(f"Invalid argument: {args[0]}. Use a level number or --list.")
+            print(f"Invalid level: {args[0]}. Use a level number or --list.")
             sys.exit(1)
         if target not in levels:
             print(f"Level {target} not available. Available: {levels}")
@@ -57,17 +66,17 @@ def main() -> None:
         target = levels[-1]
 
     print("=" * 60)
-    print(f"  ICA Runner — evaluating up to Level {target}")
+    print(f"  ICA Runner — {challenge} — up to Level {target}")
     print("=" * 60)
-    print(f"Solution: {core.SOLUTION}")
+    print(f"Solution: {core.solution_path(challenge)}")
 
     print("\n" + "-" * 60)
-    print("  PUBLIC TESTS (gate: levels 1.." + str(target) + ")")
+    print(f"  PUBLIC TESTS (gate: levels 1..{target})")
     print("-" * 60)
-    public = core.run_public(target)
+    public = core.run_public(challenge, target)
     _print_tests(public["tests"])
 
-    hidden = core.run_hidden(target)
+    hidden = core.run_hidden(challenge, target)
     if hidden["total"]:
         print("\n" + "-" * 60)
         print(f"  HIDDEN TESTS (Level {target}) — feedback, non-blocking")
@@ -78,10 +87,6 @@ def main() -> None:
     print("\n" + "=" * 60)
     if public["passed"]:
         print(f"  Level {target}: ALL public tests PASSED.")
-        if target < 4:
-            print("  >> Tell the assistant to reveal the next level.")
-        else:
-            print("  >> Assessment complete!")
     else:
         print(f"  Level {target}: public tests FAILED. Fix and run again.")
     print("=" * 60)
