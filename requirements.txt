@@ -1,2 +1,3 @@
-# Sem dependências externas: o runner usa apenas a stdlib (unittest, subprocess).
-# Os desafios são gerados pelo assistente nesta sessão, não via API.
+# Runner core (main.py) uses only the stdlib.
+# The local web IDE (ui.py) needs:
+flask>=3.0

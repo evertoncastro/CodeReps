@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ICA Mock Assessment</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <span class="brand">ICA Mock Assessment</span>
+    <nav id="level-tabs"></nav>
+    <span class="spacer"></span>
+    <button id="btn-save" title="Ctrl+S">Save</button>
+    <button id="btn-run" class="primary" title="Ctrl+Enter">Run Tests</button>
+  </header>
+
+  <main id="layout">
+    <section id="statement" class="pane">
+      <div id="readme" class="markdown"></div>
+    </section>
+
+    <section id="center" class="pane">
+      <div id="file-tabs"></div>
+      <div id="editor"></div>
+    </section>
+
+    <section id="right" class="pane">
+      <div id="results">
+        <h3>Results</h3>
+        <div id="results-body" class="muted">Run the tests to see results.</div>
+      </div>
+    </section>
+  </main>
+
+  <!--
+    Load the plain UMD lib (marked) BEFORE Monaco's AMD loader. Its UMD wrapper
+    checks for `define.amd`; once Monaco's loader defines it, marked would
+    register as an anonymous AMD module instead of attaching to `window`,
+    leaving `marked` undefined. Loading it first attaches the global.
+  -->
+  <!-- Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Monaco (defines AMD require/define) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
