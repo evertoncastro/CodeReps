@@ -6,7 +6,7 @@ Stores, per challenge:
     compute the remaining time of the challenge's timebox.
 
 A level N is "unlocked" when completed_level >= N - 1. Single-user, local; the
-DB lives in workspace/.
+DB lives in challenges/progress.db, keyed by challenge id.
 """
 
 import sqlite3
@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 BASE = Path(__file__).parent
-DB = BASE / "workspace" / "progress.db"
+DB = BASE / "challenges" / "progress.db"
 DEFAULT_CHALLENGE = "default"
 
 
