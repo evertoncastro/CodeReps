@@ -11,6 +11,30 @@ let activeTab = "solution";  // focused tab id
 let solutionCode = "";       // source of truth for solution.py (survives tab switches)
 const contentCache = {};     // id -> content for read-only files
 
+let timerInterval = null;
+
+// ---- countdown clock ----
+function startTimer(remainingSeconds) {
+  const el = document.getElementById("timer");
+  if (timerInterval) clearInterval(timerInterval);
+  let secs = Number.isFinite(remainingSeconds) ? remainingSeconds : 0;
+
+  const render = () => {
+    const left = Math.max(0, secs);
+    const m = Math.floor(left / 60);
+    const s = left % 60;
+    el.textContent = `⏱ ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    el.classList.toggle("expired", secs <= 0);
+  };
+
+  render();
+  timerInterval = setInterval(() => {
+    secs -= 1;
+    render();
+    if (secs <= 0) clearInterval(timerInterval);
+  }, 1000);
+}
+
 // ---- Monaco editor ----
 require.config({
   paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" },
@@ -48,6 +72,8 @@ async function loadState() {
   levels = state.levels;
   currentLevel = state.current;
   solutionCode = state.solution || "";
+  if (state.title) document.querySelector(".brand").textContent = state.title;
+  startTimer(state.remaining_seconds);
   renderLevelTabs();
   if (currentLevel) await loadLevel(currentLevel);
   if (!editor) await initEditor(solutionCode);

@@ -47,6 +47,18 @@ def level_of(test_name: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def read_challenge_meta() -> dict:
+    """Challenge metadata (title, timebox). Falls back to sensible defaults."""
+    meta = {"title": "Challenge", "timebox_minutes": 60}
+    f = LIB / "challenge.json"
+    if f.exists():
+        try:
+            meta.update(json.loads(f.read_text()))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return meta
+
+
 def read_solution() -> str:
     return SOLUTION.read_text() if SOLUTION.exists() else ""
 

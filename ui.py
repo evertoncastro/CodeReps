@@ -12,6 +12,7 @@ Hidden test sources are never served. Tests run in a subprocess via runner_core.
 
 import os
 import re
+import time
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -48,6 +49,10 @@ def static_files(filename: str):
 @app.get("/api/state")
 def state():
     levels = unlocked_levels()
+    meta = core.read_challenge_meta()
+    started = progress.ensure_started()  # starts the timer on first access
+    timebox = int(meta.get("timebox_minutes", 60)) * 60
+    remaining = max(0, int(timebox - (time.time() - started)))
     return jsonify(
         {
             "levels": levels,
@@ -55,6 +60,9 @@ def state():
             "completed": progress.get_completed(),
             "authored": core.available_levels(),
             "solution": core.read_solution(),
+            "title": meta.get("title"),
+            "timebox_minutes": meta.get("timebox_minutes"),
+            "remaining_seconds": remaining,
         }
     )
 

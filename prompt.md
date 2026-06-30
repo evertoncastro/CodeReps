@@ -51,6 +51,7 @@ Um desafio por vez vive em `workspace/challenge_library/`, com arquivos planos
 
 ```
 workspace/challenge_library/
+  challenge.json               # metadados: {"title", "timebox_minutes"} (ex.: 60)
   solution.py                  # a única solução, evolui nível a nível (o candidato edita)
   level_1.md                   # requisitos do nível 1 (legível)
   level_1_public_tests.py      # testes públicos do nível 1 (unittest, runnable)
