@@ -32,15 +32,19 @@ html, body {
 .brand { font-weight: 600; }
 .spacer { flex: 1; }
 
+#level-tabs {
+  display: flex;
+  gap: 6px;
+}
 #level-tabs button {
-  background: transparent;
+  background: #333;
   color: var(--muted);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
 }
-#level-tabs button.active { color: var(--text); background: #333; }
+#level-tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent); }
 #level-tabs button:hover { color: var(--text); }
 
 #topbar button {
