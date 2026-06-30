@@ -32,6 +32,14 @@ def unlocked_levels() -> list[int]:
     return [n for n in core.available_levels() if n <= completed + 1]
 
 
+def remaining_seconds() -> int:
+    """Seconds left in the challenge timebox (0 once expired). Starts the timer."""
+    meta = core.read_challenge_meta()
+    started = progress.ensure_started()
+    timebox = int(meta.get("timebox_minutes", 60)) * 60
+    return max(0, int(timebox - (time.time() - started)))
+
+
 # ----- static frontend -----
 
 @app.get("/")
@@ -50,9 +58,6 @@ def static_files(filename: str):
 def state():
     levels = unlocked_levels()
     meta = core.read_challenge_meta()
-    started = progress.ensure_started()  # starts the timer on first access
-    timebox = int(meta.get("timebox_minutes", 60)) * 60
-    remaining = max(0, int(timebox - (time.time() - started)))
     return jsonify(
         {
             "levels": levels,
@@ -62,7 +67,7 @@ def state():
             "solution": core.read_solution(),
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
-            "remaining_seconds": remaining,
+            "remaining_seconds": remaining_seconds(),
         }
     )
 
@@ -98,6 +103,8 @@ def file(file_id: str):
 
 @app.post("/api/save")
 def save():
+    if remaining_seconds() <= 0:
+        return jsonify({"error": "time_up"}), 403
     data = request.get_json(force=True)
     core.write_solution(data.get("code", ""))
     return jsonify({"ok": True})
@@ -105,6 +112,8 @@ def save():
 
 @app.post("/api/run")
 def run():
+    if remaining_seconds() <= 0:
+        return jsonify({"error": "time_up", "remaining_seconds": 0}), 403
     data = request.get_json(force=True)
     target = int(data.get("level", 1))
     if target not in unlocked_levels():

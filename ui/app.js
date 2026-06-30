@@ -12,6 +12,7 @@ let solutionCode = "";       // source of truth for solution.py (survives tab sw
 const contentCache = {};     // id -> content for read-only files
 
 let timerInterval = null;
+let locked = false;
 
 // ---- countdown clock ----
 function startTimer(remainingSeconds) {
@@ -28,11 +29,29 @@ function startTimer(remainingSeconds) {
   };
 
   render();
+  if (secs <= 0) lockUI();
   timerInterval = setInterval(() => {
     secs -= 1;
     render();
-    if (secs <= 0) clearInterval(timerInterval);
+    if (secs <= 0) {
+      clearInterval(timerInterval);
+      lockUI();
+    }
   }, 1000);
+}
+
+// Lock the challenge once time is up: disable actions and show a banner.
+function lockUI() {
+  if (locked) return;
+  locked = true;
+  document.getElementById("btn-run").disabled = true;
+  document.getElementById("btn-save").disabled = true;
+  document.getElementById("timer").classList.add("expired");
+  const body = document.getElementById("results-body");
+  const banner = document.createElement("div");
+  banner.className = "summary fail";
+  banner.textContent = "⏱ Time is up — the challenge is locked.";
+  body.prepend(banner);
 }
 
 // ---- Monaco editor ----
@@ -187,15 +206,18 @@ function syncSolution() {
 }
 
 async function saveSolution() {
+  if (locked) return;
   syncSolution();
-  await api("/api/save", {
+  const res = await api("/api/save", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code: solutionCode }),
   });
+  if (res.error === "time_up") lockUI();
 }
 
 async function runTests() {
+  if (locked) return;
   syncSolution();
   const body = document.getElementById("results-body");
   body.innerHTML = '<span class="muted">Running…</span>';
@@ -204,6 +226,10 @@ async function runTests() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level: currentLevel, code: solutionCode }),
   });
+  if (data.error === "time_up") {
+    lockUI();
+    return;
+  }
   if (Array.isArray(data.unlocked)) {
     levels = data.unlocked;
     renderLevelTabs();
