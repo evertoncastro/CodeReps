@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Local web IDE for ICA mock assessments (single user, runs on your machine).
 
-    python ui.py            # serve at http://localhost:5000
+    python run.py           # serve at http://localhost:5000
 
 Routes:
     /                       challenge list (landing page)
@@ -140,6 +140,14 @@ def file(challenge: str, file_id: str):
     if content is None:
         return jsonify({"error": "not found"}), 404
     return jsonify({"id": file_id, "content": content})
+
+
+@app.post("/api/<challenge>/restart")
+def restart(challenge: str):
+    """Reset only the timer (progress and solution are kept)."""
+    _require(challenge)
+    progress.reset_timer(challenge)
+    return jsonify({"remaining_seconds": remaining_seconds(challenge)})
 
 
 @app.post("/api/<challenge>/save")

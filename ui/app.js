@@ -212,6 +212,18 @@ function syncSolution() {
   if (activeTab === "solution") solutionCode = editor.getValue();
 }
 
+async function restartChallenge() {
+  const data = await api(`${API}/restart`, { method: "POST" });
+  // Unlock the UI (the timer may have been expired) and restart the countdown.
+  locked = false;
+  document.getElementById("btn-run").disabled = false;
+  document.getElementById("btn-save").disabled = false;
+  document.getElementById("timer").classList.remove("expired");
+  const body = document.getElementById("results-body");
+  body.innerHTML = '<span class="muted">Timer restarted. Run the tests to see results.</span>';
+  startTimer(data.remaining_seconds);
+}
+
 async function saveSolution() {
   if (locked) return;
   syncSolution();
@@ -292,4 +304,5 @@ function testRow(t) {
 // ---- boot ----
 document.getElementById("btn-run").onclick = runTests;
 document.getElementById("btn-save").onclick = saveSolution;
+document.getElementById("btn-restart").onclick = restartChallenge;
 loadState();

@@ -1,7 +1,7 @@
 """Shared execution core for the ICA mock assessment.
 
-Both the CLI (main.py) and the web UI (ui.py) import this module so that tests
-run the exact same way against the same files on disk.
+The web service (run.py) imports this module to run tests against the files on
+disk.
 
 The challenges/ directory is a library of challenges, one folder each:
 
