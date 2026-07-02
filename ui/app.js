@@ -77,6 +77,14 @@ function initEditor(initialSolution) {
         automaticLayout: true,
         minimap: { enabled: false },
         fontSize: 13,
+        wordWrap: "off", // long lines scroll left/right instead of wrapping
+        scrollbar: {
+          // Keep the horizontal scrollbar visible (not auto-hiding) and easy to
+          // grab, so long lines can be scrolled left/right like in VS Code.
+          horizontal: "visible",
+          horizontalScrollbarSize: 14,
+          verticalScrollbarSize: 14,
+        },
       });
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runTests);
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveSolution);

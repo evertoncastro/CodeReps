@@ -20,6 +20,12 @@ html, body {
   font-size: 13px;
 }
 
+/* Page is a flex column: fixed topbar + flexible layout that fills the rest,
+   so no magic pixel offsets and the editor's bottom (with its horizontal
+   scrollbar) never falls below the viewport. */
+body { display: flex; flex-direction: column; overflow: hidden; }
+#topbar { flex: 0 0 auto; }
+
 #topbar {
   display: flex;
   align-items: center;
@@ -95,10 +101,11 @@ a.brand:hover { color: #fff; }
 
 #layout {
   display: flex;
-  height: calc(100% - 49px);
+  flex: 1;
+  min-height: 0;
 }
 
-.pane { overflow: hidden; display: flex; flex-direction: column; }
+.pane { overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* Split.js drag handles between the panes */
 .gutter {
@@ -120,7 +127,7 @@ a.brand:hover { color: #fff; }
 .file-item.active { background: #094771; }
 .file-item.readonly { font-style: italic; color: var(--muted); }
 .file-item.readonly.active { color: var(--text); }
-#readme { flex: 1; overflow-y: auto; }
+#readme { flex: 1; min-height: 0; overflow-y: auto; }
 .markdown { padding: 16px; line-height: 1.5; }
 .markdown h1 { font-size: 20px; }
 .markdown h2 { font-size: 16px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
@@ -164,10 +171,10 @@ a.brand:hover { color: #fff; }
 }
 .file-tab-close:hover { color: var(--fail); }
 
-#editor { flex: 1; }
+#editor { flex: 1; min-height: 0; }
 
 #right { display: flex; flex-direction: column; }
-#results { flex: 1; overflow-y: auto; padding: 12px; }
+#results { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; }
 #results h3 { margin: 0 0 8px; font-size: 13px; }
 .muted { color: var(--muted); }
 
