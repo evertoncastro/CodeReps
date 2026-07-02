@@ -69,6 +69,15 @@ def _iter_tests(suite):
             yield item
 
 
+def _definition_line(test) -> int:
+    """Source line where the test method is defined (for definition order)."""
+    try:
+        method = getattr(type(test), test._testMethodName)
+        return method.__code__.co_firstlineno
+    except Exception:
+        return 0
+
+
 def main() -> None:
     modules = sys.argv[1:]
     loader = unittest.TestLoader()
@@ -86,7 +95,10 @@ def main() -> None:
             )
             continue
 
-        for test in _iter_tests(suite):
+        # Run in the order the tests are defined in the file (unittest sorts
+        # alphabetically by default), keeping modules in the given order.
+        tests = sorted(_iter_tests(suite), key=_definition_line)
+        for test in tests:
             if _USE_ALARM:
                 signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT)
             try:
