@@ -40,13 +40,15 @@
   </main>
 
   <!--
-    Load the plain UMD lib (marked) BEFORE Monaco's AMD loader. Its UMD wrapper
-    checks for `define.amd`; once Monaco's loader defines it, marked would
-    register as an anonymous AMD module instead of attaching to `window`,
-    leaving `marked` undefined. Loading it first attaches the global.
+    Load plain UMD libs (marked, Split.js) BEFORE Monaco's AMD loader. Their UMD
+    wrappers check for `define.amd`; once Monaco's loader defines it, they would
+    register as anonymous AMD modules instead of attaching to `window`, leaving
+    `marked` / `Split` undefined. Loading them first attaches the globals.
   -->
   <!-- Markdown -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Resizable panels -->
+  <script src="https://cdn.jsdelivr.net/npm/split.js@1.6.5/dist/split.min.js"></script>
   <!-- Monaco (defines AMD require/define) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
   <script src="/ui/app.js"></script>

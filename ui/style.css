@@ -94,13 +94,21 @@ a.brand:hover { color: #fff; }
 #topbar button:disabled { opacity: 0.5; cursor: default; }
 
 #layout {
-  display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr;
+  display: flex;
   height: calc(100% - 49px);
 }
 
-.pane { overflow: hidden; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-.pane:last-child { border-right: none; }
+.pane { overflow: hidden; display: flex; flex-direction: column; }
+
+/* Split.js drag handles between the panes */
+.gutter {
+  background: var(--border);
+  flex: 0 0 auto;
+}
+.gutter.gutter-horizontal {
+  cursor: col-resize;
+}
+.gutter:hover { background: var(--accent); }
 
 #statement { display: flex; flex-direction: column; }
 #file-explorer { flex: 0 0 auto; border-bottom: 1px solid var(--border); padding: 10px 12px; }

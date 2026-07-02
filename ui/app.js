@@ -301,8 +301,31 @@ function testRow(t) {
   return div;
 }
 
+// ---- resizable panels (IDE-style draggable gutters) ----
+function initSplit() {
+  const KEY = "ica-split-sizes";
+  let saved = null;
+  try {
+    saved = JSON.parse(localStorage.getItem(KEY) || "null");
+  } catch (e) {
+    saved = null;
+  }
+  Split(["#statement", "#center", "#right"], {
+    sizes: saved || [28, 44, 28],
+    minSize: [180, 320, 220],
+    gutterSize: 6,
+    snapOffset: 0,
+    elementStyle: (dim, size, gutterSize) => ({
+      "flex-basis": `calc(${size}% - ${gutterSize}px)`,
+    }),
+    gutterStyle: (dim, gutterSize) => ({ "flex-basis": `${gutterSize}px` }),
+    onDragEnd: (sizes) => localStorage.setItem(KEY, JSON.stringify(sizes)),
+  });
+}
+
 // ---- boot ----
 document.getElementById("btn-run").onclick = runTests;
 document.getElementById("btn-save").onclick = saveSolution;
 document.getElementById("btn-restart").onclick = restartChallenge;
+initSplit();
 loadState();
