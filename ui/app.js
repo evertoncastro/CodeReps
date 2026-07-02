@@ -292,9 +292,15 @@ function testRow(t) {
   const div = document.createElement("div");
   div.className = "test " + t.status;
   const badge = { ok: "PASS", fail: "FAIL", error: "ERROR", skip: "SKIP" }[t.status] || t.status;
-  div.innerHTML = `<span class="badge">${badge}</span><span>${t.short || t.name}</span>`;
+
+  const head = document.createElement("div");
+  head.className = "test-head";
+  head.innerHTML = `<span class="badge">${badge}</span><span class="test-name">${t.short || t.name}</span>`;
+  div.appendChild(head);
+
   if (t.message && (t.status === "fail" || t.status === "error")) {
     const pre = document.createElement("pre");
+    pre.className = "test-detail";
     pre.textContent = t.message;
     div.appendChild(pre);
   }
