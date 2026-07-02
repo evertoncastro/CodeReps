@@ -8,6 +8,7 @@ class Inventory:
 
     def __init__(self) -> None:
         self.products = {}
+        self.index = []
 
     def add_product(self, product_id: str, name: str) -> bool:
         """Register a product with an initial stock of 0.
@@ -89,5 +90,28 @@ class Inventory:
             stock = product["stock"]
             total += stock
         return total
+
+    def _get_top_k_products(self, k: int):
+        result = []
+        for i in range(len(self.index)-1):
+            if i < k:
+                result.append(self.index[i][0])
+            else:
+                break
+        return result
+
+
+    def top_products(self, k: int) -> list[str]:
+        if self.index:
+            return self._get_top_k_products(k)
+      
+        for product_id, product in self.products.items():
+            self.index.append((product_id, product["stock"]))
+
+        self.index = sorted(self.index, key=lambda x: x[1], reverse=True)
+        return self._get_top_k_products(k)
+
+
+
          
         
