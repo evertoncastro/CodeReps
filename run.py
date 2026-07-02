@@ -176,7 +176,8 @@ def run(challenge: str):
     public = core.run_public(challenge, target)
     hidden = core.run_hidden(challenge, target)
 
-    if public["passed"]:
+    # Both public and hidden tests (levels 1..target) must pass to advance.
+    if public["passed"] and hidden["passed"]:
         progress.set_completed(target, challenge)
 
     unlocked = unlocked_levels(challenge)

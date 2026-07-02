@@ -196,12 +196,19 @@ def run_public(challenge: str, target: int) -> dict:
     return result
 
 
-def run_hidden(challenge: str, level: int) -> dict:
-    """Run hidden tests for a single level (feedback, non-blocking)."""
-    if not (challenge_dir(challenge) / f"level_{level}_hidden_tests.py").exists():
+def run_hidden(challenge: str, target: int) -> dict:
+    """Run hidden tests for levels 1..target (regression). Gate = all pass."""
+    cdir = challenge_dir(challenge)
+    modules = [
+        f"level_{lvl}_hidden_tests"
+        for lvl in range(1, target + 1)
+        if (cdir / f"level_{lvl}_hidden_tests.py").exists()
+    ]
+    if not modules:
         return {"passed": True, "tests": [], "passed_count": 0, "total": 0}
-    result = _run_modules(challenge, [f"level_{level}_hidden_tests"])
+    result = _run_modules(challenge, modules)
     for t in result["tests"]:
+        t["level"] = level_of(t["name"])
         t["short"] = t["name"].rsplit(".", 1)[-1]
     result["passed_count"] = sum(1 for t in result["tests"] if t["status"] == "ok")
     result["total"] = len(result["tests"])

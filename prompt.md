@@ -104,9 +104,10 @@ abaixo do orçamento) e a quadrática claramente o exceda — assim não há fla
 
 ## Avaliação (feita pelo runner, não pela LLM)
 
-* Gate determinístico: para "passar" um nível, TODOS os testes públicos de `level1..N`
-  (regressão) devem passar.
-* Os testes ocultos rodam como feedback após os públicos e NÃO bloqueiam o avanço.
+* Gate determinístico: para "passar" um nível, TODOS os testes — públicos E ocultos —
+  de `level1..N` (regressão) devem passar. Ambos bloqueiam o avanço, como no ICA real.
+* Os públicos são visíveis (exemplos); os ocultos não têm o código exposto, mas contam
+  igualmente para o resultado. Testes de performance ficam nos ocultos.
 * Cada teste tem um orçamento de tempo (`ICA_CASE_TIMEOUT`); estourar = erro (útil
   para acusar soluções lentas nos testes de performance).
 

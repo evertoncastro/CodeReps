@@ -282,7 +282,7 @@ function renderResults(data) {
   if (h && h.total) {
     const hs = document.createElement("div");
     hs.className = "summary " + (h.passed ? "ok" : "fail");
-    hs.textContent = `Hidden tests: ${h.passed_count}/${h.total} passed (feedback)`;
+    hs.textContent = `Hidden tests: ${h.passed_count}/${h.total} passed`;
     body.appendChild(hs);
     h.tests.filter((t) => t.status !== "ok").forEach((t) => body.appendChild(testRow(t)));
   }
