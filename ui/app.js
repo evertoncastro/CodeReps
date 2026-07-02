@@ -12,8 +12,12 @@ let levels = [];
 let files = [];             // openable files: [{id, label, editable}]
 let openTabs = ["solution"]; // ids open as editor tabs; solution is always present
 let activeTab = "solution";  // focused tab id
-let solutionCode = "";       // source of truth for solution.py (survives tab switches)
-const contentCache = {};     // id -> content for read-only files
+const models = {};           // id -> Monaco text model (holds content + undo history)
+const viewStates = {};       // id -> editor view state (scroll + cursor), per file
+
+function solutionValue() {
+  return models["solution"] ? models["solution"].getValue() : "";
+}
 
 let timerInterval = null;
 let locked = false;
@@ -63,19 +67,16 @@ require.config({
   paths: { vs: "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs" },
 });
 
-function initEditor(code) {
+function initEditor(initialSolution) {
   return new Promise((resolve) => {
     require(["vs/editor/editor.main"], () => {
+      models["solution"] = monaco.editor.createModel(initialSolution, "python");
       editor = monaco.editor.create(document.getElementById("editor"), {
-        value: code,
-        language: "python",
+        model: models["solution"],
         theme: "vs-dark",
         automaticLayout: true,
         minimap: { enabled: false },
         fontSize: 13,
-      });
-      editor.onDidChangeModelContent(() => {
-        if (activeTab === "solution") solutionCode = editor.getValue();
       });
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runTests);
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveSolution);
@@ -94,7 +95,6 @@ async function loadState() {
   const state = await api(`${API}/state`);
   levels = state.levels;
   currentLevel = state.current;
-  solutionCode = state.solution || "";
   if (state.title) {
     document.getElementById("brand-title").textContent = state.title;
     document.title = `${state.title} — ICA`;
@@ -102,7 +102,7 @@ async function loadState() {
   startTimer(state.remaining_seconds);
   renderLevelTabs();
   if (currentLevel) await loadLevel(currentLevel);
-  if (!editor) await initEditor(solutionCode);
+  if (!editor) await initEditor(state.solution || "");
   await refreshFiles();
   setActive("solution");
 }
@@ -178,24 +178,30 @@ async function openFile(id) {
 }
 
 async function setActive(id) {
-  const meta = files.find((f) => f.id === id) || { editable: id === "solution" };
   if (!editor) return;
-  if (activeTab === "solution") solutionCode = editor.getValue();
+  const meta = files.find((f) => f.id === id) || { editable: id === "solution" };
 
-  let content;
-  if (id === "solution") {
-    content = solutionCode;
-  } else if (contentCache[id] !== undefined) {
-    content = contentCache[id];
-  } else {
-    const data = await api(`${API}/file/${id}`);
-    content = data.content || "";
-    contentCache[id] = content;
+  // Save the current file's scroll/cursor before switching away, so each file
+  // keeps its own view position.
+  if (activeTab) viewStates[activeTab] = editor.saveViewState();
+
+  let model = models[id];
+  if (!model) {
+    let content = "";
+    if (id !== "solution") {
+      const data = await api(`${API}/file/${id}`);
+      content = data.content || "";
+    }
+    model = monaco.editor.createModel(content, "python");
+    models[id] = model;
   }
 
-  activeTab = id;
-  editor.setValue(content);
+  editor.setModel(model);
   editor.updateOptions({ readOnly: !meta.editable });
+  if (viewStates[id]) editor.restoreViewState(viewStates[id]);
+  else editor.setScrollTop(0);
+  activeTab = id;
+  editor.focus();
   renderOpenTabs();
   renderExplorer();
 }
@@ -207,11 +213,7 @@ function closeFile(id) {
   else { renderOpenTabs(); renderExplorer(); }
 }
 
-// ---- actions (always operate on the solution buffer) ----
-function syncSolution() {
-  if (activeTab === "solution") solutionCode = editor.getValue();
-}
-
+// ---- actions (always operate on the solution model, never the viewed test) ----
 async function restartChallenge() {
   const data = await api(`${API}/restart`, { method: "POST" });
   // Unlock the UI (the timer may have been expired) and restart the countdown.
@@ -226,24 +228,22 @@ async function restartChallenge() {
 
 async function saveSolution() {
   if (locked) return;
-  syncSolution();
   const res = await api(`${API}/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code: solutionCode }),
+    body: JSON.stringify({ code: solutionValue() }),
   });
   if (res.error === "time_up") lockUI();
 }
 
 async function runTests() {
   if (locked) return;
-  syncSolution();
   const body = document.getElementById("results-body");
   body.innerHTML = '<span class="muted">Running…</span>';
   const data = await api(`${API}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ level: currentLevel, code: solutionCode }),
+    body: JSON.stringify({ level: currentLevel, code: solutionValue() }),
   });
   if (data.error === "time_up") {
     lockUI();
