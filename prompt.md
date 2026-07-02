@@ -92,11 +92,23 @@ from solution import ...   # a interface daquele nível
 * Nomes de método auto-descritivos (em falha, só o nome aparece — nunca o código).
 * No `README.md` inclua apenas a lista "HIDDEN TESTS CHECK FOR" (descrições), nunca o código.
 
+### Testes de performance
+
+Nos níveis em que a complexidade importa (tipicamente L3/L4), inclua ao menos um
+teste com **entrada grande** (ex.: dezenas de milhares de operações). Cada teste
+roda sob um orçamento de tempo por caso (`ICA_CASE_TIMEOUT`, padrão 5s, via
+`SIGALRM` no harness): uma solução ineficiente (ex.: O(n²) — lista onde deveria
+ser dict) estoura o orçamento e é reportada como erro "time budget exceeded".
+Dimensione o N para que uma solução correta O(n)/O(n log n) rode com folga (bem
+abaixo do orçamento) e a quadrática claramente o exceda — assim não há flakiness.
+
 ## Avaliação (feita pelo runner, não pela LLM)
 
 * Gate determinístico: para "passar" um nível, TODOS os testes públicos de `level1..N`
   (regressão) devem passar.
 * Os testes ocultos rodam como feedback após os públicos e NÃO bloqueiam o avanço.
+* Cada teste tem um orçamento de tempo (`ICA_CASE_TIMEOUT`); estourar = erro (útil
+  para acusar soluções lentas nos testes de performance).
 
 ## Reveal incremental
 

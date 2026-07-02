@@ -38,6 +38,19 @@ class Level3PublicTests(unittest.TestCase):
     def test_find_by_empty_prefix_returns_all(self):
         self.assertEqual(self.inv.find_products_by_name_prefix(""), ["p1", "p2", "p3"])
 
+    def test_performance_large_inventory(self):
+        # A correct O(n)/O(n log n) design finishes well within the per-test
+        # time budget. A quadratic design (e.g. scanning a list on every
+        # add_product / lookup) will exceed it and be flagged.
+        inv = Inventory()
+        n = 40000
+        for i in range(n):
+            inv.add_product(f"p{i:06d}", f"name{i % 1000}")
+            inv.add_stock(f"p{i:06d}", i % 100)
+        self.assertEqual(inv.total_stock(), sum(i % 100 for i in range(n)))
+        self.assertEqual(len(inv.top_products(5)), 5)
+        self.assertEqual(inv.get_stock("p039999"), 39999 % 100)
+
 
 if __name__ == "__main__":
     unittest.main()
