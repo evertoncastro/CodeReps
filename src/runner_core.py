@@ -26,9 +26,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-BASE = Path(__file__).parent
-LIBRARY = BASE / "challenges"
-HARNESS = BASE / "test_harness.py"
+SRC_DIR = Path(__file__).parent
+ROOT = SRC_DIR.parent  # project root (contains challenges/, ui/, main.py)
+LIBRARY = ROOT / "challenges"
+HARNESS = SRC_DIR / "test_harness.py"
 TIMEOUT = int(os.environ.get("ICA_TEST_TIMEOUT", "30"))
 
 _PUBLIC_FILE_RE = re.compile(r"^level_(\d+)_public_tests\.py$")

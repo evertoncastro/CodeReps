@@ -13,8 +13,8 @@ import sqlite3
 import time
 from pathlib import Path
 
-BASE = Path(__file__).parent
-DB = BASE / "challenges" / "progress.db"
+ROOT = Path(__file__).parent.parent  # project root (src/ -> root)
+DB = ROOT / "challenges" / "progress.db"
 
 
 def _conn() -> sqlite3.Connection:

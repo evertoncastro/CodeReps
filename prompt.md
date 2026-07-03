@@ -70,7 +70,7 @@ métodos no `level_N.md` (o candidato estende o mesmo `solution.py`).
 
 ## Regras de teste (por nível)
 
-Gere módulos `unittest` REAIS e executáveis. O serviço (`run.py`) os roda com
+Gere módulos `unittest` REAIS e executáveis. O serviço (`main.py`) os roda com
 `cwd` na pasta do desafio (ex.: `challenges/warehouse_inventory/`), então cada
 teste deve começar com:
 

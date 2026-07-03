@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Local web IDE for ICA mock assessments (single user, runs on your machine).
 
-    python run.py           # serve at http://localhost:5000
+    python main.py          # serve at http://localhost:5000
 
 Routes:
     /                                    challenge list (landing)
@@ -19,14 +19,18 @@ and the solution template are never served.
 
 import os
 import re
+import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 
 import runner_core as core
 import runs
 
-UI_DIR = core.BASE / "ui"
+UI_DIR = core.ROOT / "ui"
 HOST = os.environ.get("ICA_HOST", "127.0.0.1")
 PORT = int(os.environ.get("ICA_PORT", "5000"))
 
