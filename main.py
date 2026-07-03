@@ -117,6 +117,13 @@ def list_runs(challenge: str):
     )
 
 
+@app.delete("/api/<challenge>/run/<int:run_id>")
+def delete_run(challenge: str, run_id: int):
+    _require_run(challenge, run_id)
+    runs.delete_run(run_id)
+    return jsonify({"ok": True})
+
+
 @app.post("/api/<challenge>/runs")
 def start_run(challenge: str):
     _require(challenge)

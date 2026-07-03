@@ -23,6 +23,12 @@ async function newAttempt() {
   if (d.run_id) location.href = `/${CID}/run/${d.run_id}`;
 }
 
+async function deleteAttempt(id) {
+  if (!confirm(`Delete attempt #${id}? This cannot be undone.`)) return;
+  await fetch(`/api/${CID}/run/${id}`, { method: "DELETE" });
+  load();
+}
+
 async function load() {
   document.getElementById("btn-new").onclick = newAttempt;
   const res = await fetch(`/api/${CID}/runs`);
@@ -55,6 +61,18 @@ async function load() {
       `<span>${timeInfo(r)}</span>` +
       `<span class="status">${action} →</span>` +
       `</div>`;
+
+    const del = document.createElement("button");
+    del.className = "attempt-delete";
+    del.title = "Delete attempt";
+    del.textContent = "🗑";
+    del.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      deleteAttempt(r.id);
+    };
+    card.appendChild(del);
+
     root.appendChild(card);
   });
 }

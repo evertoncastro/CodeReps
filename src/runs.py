@@ -110,6 +110,11 @@ def list_runs(challenge: str) -> list[dict]:
         return [_maybe_expire(conn, r) for r in rows]
 
 
+def delete_run(run_id: int) -> None:
+    with _conn() as conn:
+        conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+
+
 def update_solution(run_id: int, code: str) -> None:
     with _conn() as conn:
         conn.execute("UPDATE runs SET solution = ? WHERE id = ?", (code, run_id))
