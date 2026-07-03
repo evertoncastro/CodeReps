@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 class Inventory:
     """Warehouse Inventory System.
 
@@ -8,7 +10,8 @@ class Inventory:
 
     def __init__(self) -> None:
         self.products = {}
-        self.index = []
+        self._index = []
+        self._snapshots: list[Inventory] = []
 
     def add_product(self, product_id: str, name: str) -> bool:
         """Register a product with an initial stock of 0.
@@ -91,25 +94,73 @@ class Inventory:
             total += stock
         return total
 
+    def get_index(self):
+        if len(self._index) != len(self.products.keys()):
+            self._index = []
+            for product_id, product in self.products.items():
+                self._index.append((product_id, product["stock"]))
+            self._index = sorted(self._index, key=lambda x: (-x[1], x[0]))
+        return self._index
+
     def _get_top_k_products(self, k: int):
         result = []
-        for i in range(len(self.index)-1):
+        index = self.get_index()
+        for i in range(len(index)):
             if i < k:
-                result.append(self.index[i][0])
+                result.append(index[i][0])
             else:
                 break
         return result
 
-
+    def _get_low_stock_products(self, t: int):
+        result = []
+        index = self.get_index()
+        for i in range(len(index)-1, -1, -1):
+            product_id, stock = index[i]
+            if stock < t:
+                result.append(product_id)
+            else:
+                break
+        result = sorted(result)
+        return result
+         
     def top_products(self, k: int) -> list[str]:
-        if self.index:
-            return self._get_top_k_products(k)
-      
-        for product_id, product in self.products.items():
-            self.index.append((product_id, product["stock"]))
-
-        self.index = sorted(self.index, key=lambda x: x[1], reverse=True)
         return self._get_top_k_products(k)
+
+    def low_stock_products(self, threshold: int) -> list[str]:
+        return self._get_low_stock_products(threshold)
+
+    def find_products_by_name_prefix(self, prefix: str) -> list[str]:
+        product_ids = []
+        if prefix == "":
+            product_ids = list(self.products.keys())
+        else:
+            for product_id, product in self.products.items():
+                if product["name"].startswith(prefix):
+                    product_ids.append(product_id)
+        
+        product_ids = sorted(product_ids)
+        return product_ids
+
+    def snapshot(self) -> int:
+        snapshot = Inventory()
+        snapshot.products = deepcopy(self.products)
+        self._snapshots.append(snapshot)
+        return len(self._snapshots)
+
+    def restore(self, snapshot_id: int) -> bool:
+        if snapshot_id < 1:
+            return False
+        if len(self._snapshots) < snapshot_id:
+            return False
+        snapshot = self._snapshots[snapshot_id-1]
+        self.products = deepcopy(snapshot.products)
+        self._index = snapshot._index
+        return True
+
+
+
+        
 
 
 
