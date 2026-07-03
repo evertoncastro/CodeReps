@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .env
 challenges/progress.db
+challenges/*/solution.py
 
 
 .claude/settings.local.json

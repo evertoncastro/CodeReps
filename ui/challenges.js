@@ -1,9 +1,10 @@
 "use strict";
 
 function statusText(c) {
-  if (!c.started) return "not started";
-  if (c.remaining_seconds > 0) return `${Math.ceil(c.remaining_seconds / 60)} min left`;
-  return "time up";
+  if (c.has_active) return "in progress";
+  if (c.best_completed >= c.levels && c.levels > 0) return "completed";
+  if (c.attempts) return "tried";
+  return "not started";
 }
 
 async function load() {
@@ -20,13 +21,14 @@ async function load() {
     const card = document.createElement("a");
     card.className = "challenge-card";
     card.href = "/" + c.id;
-    const done = c.completed >= c.levels && c.levels > 0;
+    const done = c.best_completed >= c.levels && c.levels > 0;
     card.innerHTML = `
       <h2>${c.title}</h2>
       <div class="meta">
         <span>${c.levels} levels</span>
         <span>${c.timebox_minutes} min</span>
-        <span>progress: ${c.completed}/${c.levels}${done ? " ✓" : ""}</span>
+        <span>${c.attempts} attempt(s)</span>
+        <span>best: ${c.best_completed}/${c.levels}${done ? " ✓" : ""}</span>
         <span class="status">${statusText(c)}</span>
       </div>`;
     root.appendChild(card);

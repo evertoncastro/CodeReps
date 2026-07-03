@@ -1,12 +1,15 @@
 "use strict";
 
-// Challenge id comes from the URL path, e.g. /warehouse_inventory.
-const CHALLENGE = location.pathname.replace(/^\/+|\/+$/g, "");
-const API = `/api/${CHALLENGE}`;
+// The IDE URL is /<challenge>/run/<runId>.
+const M = location.pathname.match(/^\/([^/]+)\/run\/(\d+)$/);
+const CHALLENGE = M ? M[1] : "";
+const RUN_ID = M ? M[2] : "";
+const API = `/api/${CHALLENGE}/run/${RUN_ID}`;
 
 let editor = null;
 let currentLevel = null;
 let levels = [];
+let readOnly = false;
 
 // File state.
 let files = [];             // openable files: [{id, label, editable}]
@@ -21,6 +24,16 @@ function solutionValue() {
 
 let timerInterval = null;
 let locked = false;
+let autosaveTimer = null;
+
+// ---- helpers ----
+function fmtDuration(secs) {
+  secs = Math.max(0, Math.round(secs || 0));
+  return `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`;
+}
+function fmtDate(epoch) {
+  return epoch ? new Date(epoch * 1000).toLocaleString() : "—";
+}
 
 // ---- countdown clock ----
 function startTimer(remainingSeconds) {
@@ -29,10 +42,7 @@ function startTimer(remainingSeconds) {
   let secs = Number.isFinite(remainingSeconds) ? remainingSeconds : 0;
 
   const render = () => {
-    const left = Math.max(0, secs);
-    const m = Math.floor(left / 60);
-    const s = left % 60;
-    el.textContent = `⏱ ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    el.textContent = `⏱ ${fmtDuration(secs)}`;
     el.classList.toggle("expired", secs <= 0);
   };
 
@@ -68,13 +78,30 @@ function lockUI() {
   if (locked) return;
   locked = true;
   document.getElementById("btn-run").disabled = true;
-  document.getElementById("btn-save").disabled = true;
   document.getElementById("timer").classList.add("expired");
   const body = document.getElementById("results-body");
   const banner = document.createElement("div");
   banner.className = "summary fail";
   banner.textContent = "⏱ Time is up — the challenge is locked.";
   body.prepend(banner);
+}
+
+// ---- autosave (debounced), replaces the old Save button ----
+function scheduleAutosave() {
+  if (readOnly || locked) return;
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(flushAutosave, 800);
+}
+
+async function flushAutosave() {
+  if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+  if (readOnly || locked) return;
+  const res = await api(`${API}/autosave`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: solutionValue() }),
+  });
+  if (res && (res.error === "time_up" || res.error === "read_only")) lockUI();
 }
 
 // ---- Monaco editor ----
@@ -86,23 +113,23 @@ function initEditor(initialSolution) {
   return new Promise((resolve) => {
     require(["vs/editor/editor.main"], () => {
       models["solution"] = monaco.editor.createModel(initialSolution, "python");
+      // Autosave only the solution model — never a focused read-only test tab.
+      models["solution"].onDidChangeContent(scheduleAutosave);
       editor = monaco.editor.create(document.getElementById("editor"), {
         model: models["solution"],
         theme: "vs-dark",
         automaticLayout: true,
         minimap: { enabled: false },
         fontSize: 13,
-        wordWrap: "off", // long lines scroll left/right instead of wrapping
+        wordWrap: "off",
         scrollbar: {
-          // Keep the horizontal scrollbar visible (not auto-hiding) and easy to
-          // grab, so long lines can be scrolled left/right like in VS Code.
           horizontal: "visible",
           horizontalScrollbarSize: 14,
           verticalScrollbarSize: 14,
         },
       });
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, runTests);
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, saveSolution);
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, flushAutosave);
       resolve();
     });
   });
@@ -118,22 +145,68 @@ async function loadState() {
   const state = await api(`${API}/state`);
   levels = state.levels;
   currentLevel = state.current;
+  readOnly = state.read_only;
+  document.querySelector(".brand").setAttribute("href", `/${CHALLENGE}`);
   if (state.title) {
     document.getElementById("brand-title").textContent = state.title;
     document.title = `${state.title} — ICA`;
   }
-  startTimer(state.remaining_seconds);
-  if (state.challenge_complete) {
-    markComplete();
-    const body = document.getElementById("results-body");
-    body.innerHTML = "";
-    body.appendChild(successBanner());
-  }
   renderLevelTabs();
   if (currentLevel) await loadLevel(currentLevel);
   if (!editor) await initEditor(state.solution || "");
+  else models["solution"].setValue(state.solution || "");
   await refreshFiles();
   setActive("solution");
+
+  if (readOnly) {
+    enterViewMode(state);
+  } else {
+    startTimer(state.remaining_seconds);
+    if (state.challenge_complete) {
+      markComplete();
+      const body = document.getElementById("results-body");
+      body.innerHTML = "";
+      body.appendChild(successBanner());
+    }
+  }
+}
+
+// Finished/expired attempt: read-only review of the final code + performance.
+function enterViewMode(state) {
+  document.getElementById("btn-run").disabled = true;
+  const t = document.getElementById("timer");
+  if (state.status === "completed") {
+    t.textContent = `⏱ ${fmtDuration(state.duration_seconds)}`;
+    t.classList.add("done");
+  } else {
+    t.textContent = "⏱ 00:00";
+    t.classList.add("expired");
+  }
+  renderPerformance(state);
+}
+
+function renderPerformance(state) {
+  const body = document.getElementById("results-body");
+  body.innerHTML = "";
+  const done = state.status === "completed";
+  if (done) body.appendChild(successBanner());
+
+  const sum = document.createElement("div");
+  sum.className = "summary " + (done ? "ok" : "fail");
+  sum.textContent = done
+    ? `Completed all ${state.total_levels} levels`
+    : `Expired — reached level ${state.completed}/${state.total_levels}`;
+  body.appendChild(sum);
+
+  const info = document.createElement("div");
+  info.className = "perf muted";
+  info.innerHTML =
+    `<div>Levels completed: ${state.completed}/${state.total_levels}</div>` +
+    `<div>Time taken: ${state.duration_seconds != null ? fmtDuration(state.duration_seconds) : "—"}</div>` +
+    `<div>Started: ${fmtDate(state.started_at)}</div>` +
+    `<div>Ended: ${fmtDate(state.ended_at)}</div>` +
+    `<div style="margin-top:8px">Read-only — start a new attempt to try again.</div>`;
+  body.appendChild(info);
 }
 
 async function refreshFiles() {
@@ -216,8 +289,7 @@ async function setActive(id) {
   if (!editor) return;
   const meta = files.find((f) => f.id === id) || { editable: id === "solution" };
 
-  // Save the current file's scroll/cursor before switching away, so each file
-  // keeps its own view position.
+  // Save the current file's scroll/cursor before switching away.
   if (activeTab) viewStates[activeTab] = editor.saveViewState();
 
   let model = models[id];
@@ -232,7 +304,8 @@ async function setActive(id) {
   }
 
   editor.setModel(model);
-  editor.updateOptions({ readOnly: !meta.editable });
+  // A read-only attempt makes even the solution read-only.
+  editor.updateOptions({ readOnly: readOnly || !meta.editable });
   if (viewStates[id]) editor.restoreViewState(viewStates[id]);
   else editor.setScrollTop(0);
   activeTab = id;
@@ -248,32 +321,15 @@ function closeFile(id) {
   else { renderOpenTabs(); renderExplorer(); }
 }
 
-// ---- actions (always operate on the solution model, never the viewed test) ----
-async function restartChallenge() {
-  await api(`${API}/restart`, { method: "POST" });
-  // Full restart: back to Level 1 with a fresh timer. The solution is kept.
-  locked = false;
-  document.getElementById("btn-run").disabled = false;
-  document.getElementById("btn-save").disabled = false;
-  document.getElementById("timer").classList.remove("expired", "done");
-  openTabs = ["solution"]; // levels 2+ are locked again
-  await loadState(); // re-sync level tabs, statement, files and timer
-  document.getElementById("results-body").innerHTML =
-    '<span class="muted">Challenge restarted — back to Level 1. Run the tests to see results.</span>';
-}
-
-async function saveSolution() {
-  if (locked) return;
-  const res = await api(`${API}/save`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code: solutionValue() }),
-  });
-  if (res.error === "time_up") lockUI();
+// ---- actions ----
+async function newAttempt() {
+  const res = await api(`/api/${CHALLENGE}/runs`, { method: "POST" });
+  if (res && res.run_id) location.href = `/${CHALLENGE}/run/${res.run_id}`;
 }
 
 async function runTests() {
-  if (locked) return;
+  if (locked || readOnly) return;
+  await flushAutosave();
   const body = document.getElementById("results-body");
   body.innerHTML = '<span class="muted">Running…</span>';
   const data = await api(`${API}/run`, {
@@ -281,7 +337,7 @@ async function runTests() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level: currentLevel, code: solutionValue() }),
   });
-  if (data.error === "time_up") {
+  if (data.error === "time_up" || data.error === "read_only") {
     lockUI();
     return;
   }
@@ -291,7 +347,12 @@ async function runTests() {
     await refreshFiles();
   }
   renderResults(data);
-  if (data.challenge_complete) markComplete();
+  if (data.challenge_complete) {
+    markComplete();
+    readOnly = true;
+    editor.updateOptions({ readOnly: true });
+    document.getElementById("btn-run").disabled = true;
+  }
   // Passing unlocks the next level — move to it automatically.
   if (data.unlocked_now) await loadLevel(data.unlocked_now);
 }
@@ -374,7 +435,6 @@ function initSplit() {
 
 // ---- boot ----
 document.getElementById("btn-run").onclick = runTests;
-document.getElementById("btn-save").onclick = saveSolution;
-document.getElementById("btn-restart").onclick = restartChallenge;
+document.getElementById("btn-restart").onclick = newAttempt;
 initSplit();
 loadState();

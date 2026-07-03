@@ -109,6 +109,23 @@ def write_solution(challenge: str, code: str) -> None:
     solution_path(challenge).write_text(code)
 
 
+def template_path(challenge: str) -> Path:
+    return challenge_dir(challenge) / "solution_template.py"
+
+
+def read_template(challenge: str) -> str:
+    """Starter code for a fresh attempt. Never exposed to the candidate."""
+    p = template_path(challenge)
+    return p.read_text() if p.exists() else ""
+
+
+def create_solution_from_template(challenge: str) -> str:
+    """Materialize a fresh solution.py from the template and return its content."""
+    code = read_template(challenge)
+    write_solution(challenge, code)
+    return code
+
+
 def read_readme(challenge: str, level: int) -> str:
     f = challenge_dir(challenge) / f"level_{level}.md"
     return f.read_text() if f.exists() else ""
