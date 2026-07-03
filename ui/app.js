@@ -143,7 +143,7 @@ async function refreshFiles() {
 
 function updateRunButton() {
   const btn = document.getElementById("btn-run");
-  btn.textContent = currentLevel ? `Run Test for level ${currentLevel}` : "Run Tests";
+  btn.textContent = currentLevel ? `Run tests for level ${currentLevel}` : "Run tests";
 }
 
 async function loadLevel(n) {
