@@ -9,12 +9,14 @@ Single-user, local; the DB is challenges/progress.db (shared with the old
 progress table, which is no longer used).
 """
 
+import os
 import sqlite3
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent  # project root (src/ -> root)
-DB = ROOT / "challenges" / "progress.db"
+# ICA_DB lets tests point at a throwaway DB so they never touch real progress.
+DB = Path(os.environ.get("ICA_DB") or ROOT / "challenges" / "progress.db")
 
 
 def _conn() -> sqlite3.Connection:

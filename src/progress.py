@@ -9,12 +9,13 @@ A level N is "unlocked" when completed_level >= N - 1. Single-user, local; the
 DB lives in challenges/progress.db, keyed by challenge id.
 """
 
+import os
 import sqlite3
 import time
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent  # project root (src/ -> root)
-DB = ROOT / "challenges" / "progress.db"
+DB = Path(os.environ.get("ICA_DB") or ROOT / "challenges" / "progress.db")
 DEFAULT_CHALLENGE = "default"
 
 
