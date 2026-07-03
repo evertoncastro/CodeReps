@@ -250,15 +250,16 @@ function closeFile(id) {
 
 // ---- actions (always operate on the solution model, never the viewed test) ----
 async function restartChallenge() {
-  const data = await api(`${API}/restart`, { method: "POST" });
-  // Unlock the UI (the timer may have been expired) and restart the countdown.
+  await api(`${API}/restart`, { method: "POST" });
+  // Full restart: back to Level 1 with a fresh timer. The solution is kept.
   locked = false;
   document.getElementById("btn-run").disabled = false;
   document.getElementById("btn-save").disabled = false;
-  document.getElementById("timer").classList.remove("expired");
-  const body = document.getElementById("results-body");
-  body.innerHTML = '<span class="muted">Timer restarted. Run the tests to see results.</span>';
-  startTimer(data.remaining_seconds);
+  document.getElementById("timer").classList.remove("expired", "done");
+  openTabs = ["solution"]; // levels 2+ are locked again
+  await loadState(); // re-sync level tabs, statement, files and timer
+  document.getElementById("results-body").innerHTML =
+    '<span class="muted">Challenge restarted — back to Level 1. Run the tests to see results.</span>';
 }
 
 async function saveSolution() {

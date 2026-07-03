@@ -86,14 +86,6 @@ def ensure_started(challenge: str = DEFAULT_CHALLENGE) -> float:
     return started
 
 
-def reset_timer(challenge: str = DEFAULT_CHALLENGE) -> None:
-    """Restart only the timer (keep completed level). Next access re-starts it."""
-    with _conn() as conn:
-        conn.execute(
-            "UPDATE progress SET started_at = NULL WHERE challenge = ?", (challenge,)
-        )
-
-
 def reset(challenge: str = DEFAULT_CHALLENGE) -> None:
     """Clear progress and timer for a challenge (fresh start)."""
     with _conn() as conn:

@@ -151,10 +151,16 @@ def file(challenge: str, file_id: str):
 
 @app.post("/api/<challenge>/restart")
 def restart(challenge: str):
-    """Reset only the timer (progress and solution are kept)."""
+    """Restart the challenge: back to level 1 with a fresh timer. The
+    solution file is intentionally kept."""
     _require(challenge)
-    progress.reset_timer(challenge)
-    return jsonify({"remaining_seconds": remaining_seconds(challenge)})
+    progress.reset(challenge)
+    return jsonify(
+        {
+            "levels": unlocked_levels(challenge),
+            "remaining_seconds": remaining_seconds(challenge),
+        }
+    )
 
 
 @app.post("/api/<challenge>/save")
