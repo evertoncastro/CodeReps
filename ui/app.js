@@ -141,9 +141,15 @@ async function refreshFiles() {
   renderExplorer();
 }
 
+function updateRunButton() {
+  const btn = document.getElementById("btn-run");
+  btn.textContent = currentLevel ? `Run Test for level ${currentLevel}` : "Run Tests";
+}
+
 async function loadLevel(n) {
   currentLevel = n;
   renderLevelTabs();
+  updateRunButton();
   const data = await api(`${API}/level/${n}`);
   document.getElementById("readme").innerHTML = marked.parse(data.readme_md || "");
 }
@@ -285,6 +291,8 @@ async function runTests() {
   }
   renderResults(data);
   if (data.challenge_complete) markComplete();
+  // Passing unlocks the next level — move to it automatically.
+  if (data.unlocked_now) await loadLevel(data.unlocked_now);
 }
 
 function renderResults(data) {
