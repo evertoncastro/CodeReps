@@ -49,6 +49,12 @@ def remaining_seconds(challenge: str) -> int:
     return max(0, int(timebox - (time.time() - started)))
 
 
+def is_complete(challenge: str) -> bool:
+    """Whether every authored level has been completed."""
+    authored = core.available_levels(challenge)
+    return bool(authored) and progress.get_completed(challenge) >= max(authored)
+
+
 # ----- pages + static -----
 
 @app.get("/")
@@ -106,6 +112,7 @@ def state(challenge: str):
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
             "remaining_seconds": remaining_seconds(challenge),
+            "challenge_complete": is_complete(challenge),
         }
     )
 
@@ -189,6 +196,7 @@ def run(challenge: str):
             "completed": progress.get_completed(challenge),
             "unlocked": unlocked,
             "unlocked_now": newly[-1] if newly else None,
+            "challenge_complete": is_complete(challenge),
         }
     )
 

@@ -48,6 +48,21 @@ function startTimer(remainingSeconds) {
   }, 1000);
 }
 
+// Challenge finished (last level passed): stop the clock and turn it green.
+function markComplete() {
+  if (timerInterval) clearInterval(timerInterval);
+  const t = document.getElementById("timer");
+  t.classList.remove("expired");
+  t.classList.add("done");
+}
+
+function successBanner() {
+  const div = document.createElement("div");
+  div.className = "success-banner";
+  div.textContent = "🎉 Challenge complete — all levels passed!";
+  return div;
+}
+
 // Lock the challenge once time is up: disable actions and show a banner.
 function lockUI() {
   if (locked) return;
@@ -108,6 +123,12 @@ async function loadState() {
     document.title = `${state.title} — ICA`;
   }
   startTimer(state.remaining_seconds);
+  if (state.challenge_complete) {
+    markComplete();
+    const body = document.getElementById("results-body");
+    body.innerHTML = "";
+    body.appendChild(successBanner());
+  }
   renderLevelTabs();
   if (currentLevel) await loadLevel(currentLevel);
   if (!editor) await initEditor(state.solution || "");
@@ -263,11 +284,16 @@ async function runTests() {
     await refreshFiles();
   }
   renderResults(data);
+  if (data.challenge_complete) markComplete();
 }
 
 function renderResults(data) {
   const body = document.getElementById("results-body");
   body.innerHTML = "";
+
+  if (data.challenge_complete) {
+    body.appendChild(successBanner());
+  }
 
   if (data.unlocked_now) {
     const u = document.createElement("div");

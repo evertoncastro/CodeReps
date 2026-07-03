@@ -71,6 +71,18 @@ a.brand:hover { color: #fff; }
   color: var(--text);
 }
 .timer.expired { color: #fff; background: var(--fail); border-color: var(--fail); }
+.timer.done { color: #04231d; background: var(--ok); border-color: var(--ok); }
+
+.success-banner {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  background: rgba(78, 201, 176, 0.15);
+  border: 1px solid var(--ok);
+  border-radius: 6px;
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 14px;
+}
 
 #level-tabs {
   display: flex;
