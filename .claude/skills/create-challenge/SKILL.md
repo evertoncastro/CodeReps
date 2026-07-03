@@ -125,10 +125,15 @@ if __name__ == "__main__":
 contract (return value + failure return), then a "## Hidden Tests Check For" bullet
 list describing (not showing) the hidden checks.
 
-## Verify before finishing (required)
+## Verify before finishing (REQUIRED — do not skip)
 
-Write a correct **reference solution** and confirm every level passes, in a temp copy
-so you never touch the challenge's scratch `solution.py`:
+**Never tell the user the challenge is ready until you have written a full reference
+solution, run every level's public AND hidden tests, and confirmed they all pass.**
+This proves the tests are valid, self-consistent, and that the challenge is actually
+solvable and makes sense as a progression. If any test fails or is wrong, fix the
+tests/requirements and re-run until green — do not ship a challenge you have not solved.
+
+Do this in a temp copy so you never touch the challenge's scratch `solution.py`:
 
 ```bash
 cd /home/everton/dev/personal/justcode/codesignal
@@ -146,8 +151,13 @@ rm -rf /tmp/ica_verify
 
 Expect `OK` (0 failures). Also sanity-check that the **empty template fails** the
 public tests (run the same command with `solution_template.py` copied in as
-`solution.py`) — proving the tests actually gate. Do not commit the reference solution;
-it is only for verification.
+`solution.py`) — proving the tests actually gate.
+
+**Then remove the reference solution before closing out the challenge.** The reference
+exists only for this verification — it must never ship (it would be the answer key).
+Delete the temp dir (`rm -rf /tmp/ica_verify`) and confirm no `solution.py` or reference
+implementation was left inside `challenges/<id>/`. Only after tests pass and the
+reference is removed do you report the challenge as ready.
 
 ## After creating
 
