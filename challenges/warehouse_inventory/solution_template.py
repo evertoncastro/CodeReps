@@ -9,8 +9,6 @@ class Inventory:
     def __init__(self) -> None:
         raise NotImplementedError
 
-    # ----- Level 1 -----
-
     def add_product(self, product_id: str, name: str) -> bool:
         """Register a product with an initial stock of 0.
 
