@@ -197,6 +197,31 @@ def _reject_if_not_active(run: dict):
     return None
 
 
+@app.post("/api/<challenge>/run/<int:run_id>/resume")
+def resume_run(challenge: str, run_id: int):
+    """Start the clock for this attempt (opening/returning to its IDE)."""
+    run = _require_run(challenge, run_id)
+    if run["status"] == "in_progress":
+        runs.resume(run_id)
+        run = runs.get_run(run_id)
+    return jsonify(
+        {
+            "status": run["status"],
+            "read_only": run["status"] != "in_progress",
+            "remaining_seconds": runs.remaining_seconds(run),
+        }
+    )
+
+
+@app.post("/api/<challenge>/run/<int:run_id>/pause")
+def pause_run(challenge: str, run_id: int):
+    """Stop the clock for this attempt (leaving/hiding it)."""
+    run = _require_run(challenge, run_id)
+    if run["status"] == "in_progress":
+        runs.pause(run_id)
+    return jsonify({"ok": True})
+
+
 @app.post("/api/<challenge>/run/<int:run_id>/autosave")
 def autosave(challenge: str, run_id: int):
     run = _require_run(challenge, run_id)

@@ -86,6 +86,23 @@ function lockUI() {
   body.prepend(banner);
 }
 
+// ---- pause/resume: the clock only runs while the attempt is open ----
+async function resumeTimer() {
+  const r = await api(`${API}/resume`, { method: "POST" });
+  if (!r || r.read_only) {
+    startTimer(0); // expired while we were away
+    return;
+  }
+  startTimer(r.remaining_seconds);
+}
+
+function pauseTimer() {
+  if (readOnly || locked) return;
+  if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  if (navigator.sendBeacon) navigator.sendBeacon(`${API}/pause`);
+  else api(`${API}/pause`, { method: "POST" });
+}
+
 // ---- autosave (debounced), replaces the old Save button ----
 function scheduleAutosave() {
   if (readOnly || locked) return;
@@ -161,13 +178,7 @@ async function loadState() {
   if (readOnly) {
     enterViewMode(state);
   } else {
-    startTimer(state.remaining_seconds);
-    if (state.challenge_complete) {
-      markComplete();
-      const body = document.getElementById("results-body");
-      body.innerHTML = "";
-      body.appendChild(successBanner());
-    }
+    await resumeTimer(); // starts counting active time for this attempt
   }
 }
 
@@ -323,6 +334,7 @@ function closeFile(id) {
 
 // ---- actions ----
 async function newAttempt() {
+  pauseTimer(); // stop the clock on the attempt we're leaving
   const res = await api(`/api/${CHALLENGE}/runs`, { method: "POST" });
   if (res && res.run_id) location.href = `/${CHALLENGE}/run/${res.run_id}`;
 }
@@ -432,6 +444,16 @@ function initSplit() {
     onDragEnd: (sizes) => localStorage.setItem(KEY, JSON.stringify(sizes)),
   });
 }
+
+// Pause the clock when leaving/hiding the attempt; resume when it's visible again.
+document.addEventListener("visibilitychange", () => {
+  if (readOnly || locked) return;
+  if (document.hidden) pauseTimer();
+  else resumeTimer();
+});
+window.addEventListener("pagehide", () => {
+  if (!readOnly && !locked) pauseTimer();
+});
 
 // ---- boot ----
 document.getElementById("btn-run").onclick = runTests;

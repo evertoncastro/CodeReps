@@ -29,6 +29,8 @@ def _conn() -> sqlite3.Connection:
         "  started_at REAL NOT NULL,"
         "  ended_at REAL,"
         "  duration_seconds REAL,"
+        "  spent_seconds REAL NOT NULL DEFAULT 0,"   # active time already accumulated (while paused)
+        "  resumed_at REAL,"                          # start of the current active session; NULL when paused
         "  completed_level INTEGER NOT NULL DEFAULT 0,"
         "  total_levels INTEGER NOT NULL,"
         "  timebox_minutes INTEGER NOT NULL,"
@@ -37,21 +39,43 @@ def _conn() -> sqlite3.Connection:
         ")"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_challenge ON runs(challenge, id DESC)")
+    # Migrate older DBs that predate the pause/resume columns.
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
+    if "spent_seconds" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN spent_seconds REAL NOT NULL DEFAULT 0")
+    if "resumed_at" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN resumed_at REAL")
     return conn
 
 
+def _active_spent(run: dict) -> float:
+    """Active time used so far: accumulated + the current running session."""
+    spent = run["spent_seconds"]
+    if run["resumed_at"] is not None:
+        spent += time.time() - run["resumed_at"]
+    return spent
+
+
 def _maybe_expire(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
-    """Lazily mark a run expired once its timebox has elapsed (no background job)."""
+    """Lazily mark a run expired once its *active* time reaches the timebox.
+
+    Time only accrues while the attempt is open (resumed); a paused run never
+    expires on its own.
+    """
     run = dict(row)
     if run["status"] == "in_progress":
-        deadline = run["started_at"] + run["timebox_minutes"] * 60
-        if time.time() >= deadline:
+        limit = run["timebox_minutes"] * 60
+        if _active_spent(run) >= limit:
+            now = time.time()
             run["status"] = "expired"
-            run["ended_at"] = deadline
-            run["duration_seconds"] = run["timebox_minutes"] * 60
+            run["spent_seconds"] = limit
+            run["resumed_at"] = None
+            run["ended_at"] = now
+            run["duration_seconds"] = limit
             conn.execute(
-                "UPDATE runs SET status='expired', ended_at=?, duration_seconds=? WHERE id=?",
-                (run["ended_at"], run["duration_seconds"], run["id"]),
+                "UPDATE runs SET status='expired', spent_seconds=?, resumed_at=NULL, "
+                "ended_at=?, duration_seconds=? WHERE id=?",
+                (limit, now, limit, run["id"]),
             )
     return run
 
@@ -98,22 +122,55 @@ def set_completed_level(run_id: int, level: int) -> None:
         )
 
 
-def mark_completed(run_id: int) -> None:
-    """Mark a run completed in time, recording end time and duration."""
+def resume(run_id: int) -> None:
+    """Start counting active time for this run (when its IDE is opened/visible)."""
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT status, resumed_at FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row and row["status"] == "in_progress" and row["resumed_at"] is None:
+            conn.execute("UPDATE runs SET resumed_at = ? WHERE id = ?", (time.time(), run_id))
+
+
+def pause(run_id: int) -> None:
+    """Stop the clock: fold the current session into spent_seconds (on leave)."""
     now = time.time()
     with _conn() as conn:
+        row = conn.execute(
+            "SELECT status, spent_seconds, resumed_at FROM runs WHERE id = ?", (run_id,)
+        ).fetchone()
+        if row and row["status"] == "in_progress" and row["resumed_at"] is not None:
+            spent = row["spent_seconds"] + (now - row["resumed_at"])
+            conn.execute(
+                "UPDATE runs SET spent_seconds = ?, resumed_at = NULL WHERE id = ?",
+                (spent, run_id),
+            )
+
+
+def mark_completed(run_id: int) -> None:
+    """Mark a run completed in time, recording end time and active duration."""
+    now = time.time()
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM runs WHERE id = ? AND status = 'in_progress'", (run_id,)
+        ).fetchone()
+        if row is None:
+            return
+        spent = row["spent_seconds"] + (now - row["resumed_at"] if row["resumed_at"] else 0)
         conn.execute(
-            "UPDATE runs SET status='completed', ended_at=?, "
-            "duration_seconds = ? - started_at WHERE id = ? AND status = 'in_progress'",
-            (now, now, run_id),
+            "UPDATE runs SET status='completed', ended_at=?, spent_seconds=?, "
+            "resumed_at=NULL, duration_seconds=? WHERE id = ?",
+            (now, spent, spent, run_id),
         )
 
 
 def remaining_seconds(run: dict) -> int:
-    """Seconds left in this run's timebox (0 once not in progress)."""
+    """Seconds left in this run's timebox (0 once not in progress).
+
+    Based on active time only (paused time does not count down)."""
     if run["status"] != "in_progress":
         return 0
-    return max(0, int(run["timebox_minutes"] * 60 - (time.time() - run["started_at"])))
+    return max(0, int(run["timebox_minutes"] * 60 - _active_spent(run)))
 
 
 def summary(challenge: str) -> dict:
