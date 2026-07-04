@@ -27,7 +27,9 @@ async function newAttempt() {
   if (d.run_id) location.href = `/${CID}/run/${d.run_id}`;
 }
 
-async function setArchived(id, archived) {
+async function setArchived(id, archived, number) {
+  const verb = archived ? "Archive" : "Unarchive";
+  if (!confirm(`${verb} attempt #${number}?`)) return;
   await fetch(`/api/${CID}/run/${id}/${archived ? "archive" : "unarchive"}`, { method: "POST" });
   load();
 }
@@ -85,7 +87,7 @@ async function load() {
     btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      setArchived(r.id, !showArchived);
+      setArchived(r.id, !showArchived, r.number);
     };
     card.appendChild(btn);
 
