@@ -23,7 +23,6 @@ function solutionValue() {
 }
 
 let timerInterval = null;
-let locked = false;
 let autosaveTimer = null;
 
 // ---- helpers ----
@@ -35,26 +34,26 @@ function fmtDate(epoch) {
   return epoch ? new Date(epoch * 1000).toLocaleString() : "—";
 }
 
-// ---- countdown clock ----
+// ---- clock: the timebox is a target; it keeps counting past 0 (overtime) ----
 function startTimer(remainingSeconds) {
   const el = document.getElementById("timer");
   if (timerInterval) clearInterval(timerInterval);
   let secs = Number.isFinite(remainingSeconds) ? remainingSeconds : 0;
 
   const render = () => {
-    el.textContent = `⏱ ${fmtDuration(secs)}`;
-    el.classList.toggle("expired", secs <= 0);
+    if (secs >= 0) {
+      el.textContent = `⏱ ${fmtDuration(secs)}`;
+      el.classList.remove("overtime");
+    } else {
+      el.textContent = `⏱ +${fmtDuration(-secs)} over`;
+      el.classList.add("overtime");
+    }
   };
 
   render();
-  if (secs <= 0) lockUI();
   timerInterval = setInterval(() => {
     secs -= 1;
     render();
-    if (secs <= 0) {
-      clearInterval(timerInterval);
-      lockUI();
-    }
   }, 1000);
 }
 
@@ -62,42 +61,27 @@ function startTimer(remainingSeconds) {
 function markComplete() {
   if (timerInterval) clearInterval(timerInterval);
   const t = document.getElementById("timer");
-  t.classList.remove("expired");
+  t.classList.remove("overtime", "expired");
   t.classList.add("done");
 }
 
-function successBanner() {
+function successBanner(overTime) {
   const div = document.createElement("div");
   div.className = "success-banner";
-  div.textContent = "🎉 Challenge complete — all levels passed!";
+  div.textContent = overTime
+    ? "🎉 Challenge complete — all levels passed (over the time limit)."
+    : "🎉 Challenge complete — all levels passed!";
   return div;
-}
-
-// Lock the challenge once time is up: disable actions and show a banner.
-function lockUI() {
-  if (locked) return;
-  locked = true;
-  document.getElementById("btn-run").disabled = true;
-  document.getElementById("timer").classList.add("expired");
-  const body = document.getElementById("results-body");
-  const banner = document.createElement("div");
-  banner.className = "summary fail";
-  banner.textContent = "⏱ Time is up — the challenge is locked.";
-  body.prepend(banner);
 }
 
 // ---- pause/resume: the clock only runs while the attempt is open ----
 async function resumeTimer() {
   const r = await api(`${API}/resume`, { method: "POST" });
-  if (!r || r.read_only) {
-    startTimer(0); // expired while we were away
-    return;
-  }
-  startTimer(r.remaining_seconds);
+  if (r) startTimer(r.remaining_seconds);
 }
 
 function pauseTimer() {
-  if (readOnly || locked) return;
+  if (readOnly) return;
   if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   if (navigator.sendBeacon) navigator.sendBeacon(`${API}/pause`);
   else api(`${API}/pause`, { method: "POST" });
@@ -105,20 +89,19 @@ function pauseTimer() {
 
 // ---- autosave (debounced), replaces the old Save button ----
 function scheduleAutosave() {
-  if (readOnly || locked) return;
+  if (readOnly) return;
   if (autosaveTimer) clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(flushAutosave, 800);
 }
 
 async function flushAutosave() {
   if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = null; }
-  if (readOnly || locked) return;
-  const res = await api(`${API}/autosave`, {
+  if (readOnly) return;
+  await api(`${API}/autosave`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code: solutionValue() }),
   });
-  if (res && (res.error === "time_up" || res.error === "read_only")) lockUI();
 }
 
 // ---- Monaco editor ----
@@ -200,20 +183,27 @@ function renderPerformance(state) {
   const body = document.getElementById("results-body");
   body.innerHTML = "";
   const done = state.status === "completed";
-  if (done) body.appendChild(successBanner());
+  if (done) body.appendChild(successBanner(state.over_time));
 
   const sum = document.createElement("div");
   sum.className = "summary " + (done ? "ok" : "fail");
   sum.textContent = done
     ? `Completed all ${state.total_levels} levels`
-    : `Expired — reached level ${state.completed}/${state.total_levels}`;
+    : `Reached level ${state.completed}/${state.total_levels}`;
   body.appendChild(sum);
 
+  const limit = (state.timebox_minutes || 0) * 60;
+  const withinLine = done
+    ? (state.over_time
+        ? `<div>Within time limit: no (limit ${fmtDuration(limit)})</div>`
+        : `<div>Within time limit: yes</div>`)
+    : "";
   const info = document.createElement("div");
   info.className = "perf muted";
   info.innerHTML =
     `<div>Levels completed: ${state.completed}/${state.total_levels}</div>` +
     `<div>Time taken: ${state.duration_seconds != null ? fmtDuration(state.duration_seconds) : "—"}</div>` +
+    withinLine +
     `<div>Started: ${fmtDate(state.started_at)}</div>` +
     `<div>Ended: ${fmtDate(state.ended_at)}</div>` +
     `<div style="margin-top:8px">Read-only — start a new attempt to try again.</div>`;
@@ -340,7 +330,7 @@ async function newAttempt() {
 }
 
 async function runTests() {
-  if (locked || readOnly) return;
+  if (readOnly) return;
   await flushAutosave();
   const body = document.getElementById("results-body");
   body.innerHTML = '<span class="muted">Running…</span>';
@@ -349,10 +339,7 @@ async function runTests() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ level: currentLevel, code: solutionValue() }),
   });
-  if (data.error === "time_up" || data.error === "read_only") {
-    lockUI();
-    return;
-  }
+  if (data.error === "read_only") return;
   if (Array.isArray(data.unlocked)) {
     levels = data.unlocked;
     renderLevelTabs();
@@ -374,7 +361,7 @@ function renderResults(data) {
   body.innerHTML = "";
 
   if (data.challenge_complete) {
-    body.appendChild(successBanner());
+    body.appendChild(successBanner(data.over_time));
   }
 
   if (data.unlocked_now) {
@@ -447,12 +434,12 @@ function initSplit() {
 
 // Pause the clock when leaving/hiding the attempt; resume when it's visible again.
 document.addEventListener("visibilitychange", () => {
-  if (readOnly || locked) return;
+  if (readOnly) return;
   if (document.hidden) pauseTimer();
   else resumeTimer();
 });
 window.addEventListener("pagehide", () => {
-  if (!readOnly && !locked) pauseTimer();
+  if (!readOnly) pauseTimer();
 });
 
 // ---- boot ----

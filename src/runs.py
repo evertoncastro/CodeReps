@@ -58,28 +58,8 @@ def _active_spent(run: dict) -> float:
     return spent
 
 
-def _maybe_expire(conn: sqlite3.Connection, row: sqlite3.Row) -> dict:
-    """Lazily mark a run expired once its *active* time reaches the timebox.
-
-    Time only accrues while the attempt is open (resumed); a paused run never
-    expires on its own.
-    """
-    run = dict(row)
-    if run["status"] == "in_progress":
-        limit = run["timebox_minutes"] * 60
-        if _active_spent(run) >= limit:
-            now = time.time()
-            run["status"] = "expired"
-            run["spent_seconds"] = limit
-            run["resumed_at"] = None
-            run["ended_at"] = now
-            run["duration_seconds"] = limit
-            conn.execute(
-                "UPDATE runs SET status='expired', spent_seconds=?, resumed_at=NULL, "
-                "ended_at=?, duration_seconds=? WHERE id=?",
-                (limit, now, limit, run["id"]),
-            )
-    return run
+# The timebox is a target, not a hard stop: a run keeps accruing active time
+# past the limit until the candidate completes it (that overtime is a metric).
 
 
 def create_run(challenge: str, initial_solution: str, timebox_minutes: int,
@@ -98,7 +78,7 @@ def create_run(challenge: str, initial_solution: str, timebox_minutes: int,
 def get_run(run_id: int) -> dict | None:
     with _conn() as conn:
         row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
-        return _maybe_expire(conn, row) if row is not None else None
+        return dict(row) if row is not None else None
 
 
 def list_runs(challenge: str) -> list[dict]:
@@ -107,7 +87,7 @@ def list_runs(challenge: str) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM runs WHERE challenge = ? ORDER BY id DESC", (challenge,)
         ).fetchall()
-        return [_maybe_expire(conn, r) for r in rows]
+        return [dict(r) for r in rows]
 
 
 def delete_run(run_id: int) -> None:
@@ -172,12 +152,20 @@ def mark_completed(run_id: int) -> None:
 
 
 def remaining_seconds(run: dict) -> int:
-    """Seconds left in this run's timebox (0 once not in progress).
+    """Seconds left in this run's timebox (may be NEGATIVE past the limit).
 
-    Based on active time only (paused time does not count down)."""
+    Based on active time only (paused time does not count down). 0 once the run
+    is no longer in progress."""
     if run["status"] != "in_progress":
         return 0
-    return max(0, int(run["timebox_minutes"] * 60 - _active_spent(run)))
+    return int(run["timebox_minutes"] * 60 - _active_spent(run))
+
+
+def elapsed_seconds(run: dict) -> int:
+    """Active time used so far (keeps growing past the timebox)."""
+    if run["status"] != "in_progress":
+        return int(run["duration_seconds"] or 0)
+    return int(_active_spent(run))
 
 
 def summary(challenge: str) -> dict:

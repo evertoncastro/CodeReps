@@ -12,7 +12,10 @@ function fmtDate(e) {
 }
 
 function timeInfo(r) {
-  if (r.status === "in_progress") return `${Math.ceil((r.remaining_seconds || 0) / 60)} min left`;
+  if (r.status === "in_progress") {
+    const rem = r.remaining_seconds || 0;
+    return rem > 0 ? `${Math.ceil(rem / 60)} min left` : "over time";
+  }
   if (r.status === "completed") return `time taken: ${fmtDur(r.duration_seconds)}`;
   return "time up";
 }

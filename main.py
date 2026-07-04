@@ -159,10 +159,12 @@ def state(challenge: str, run_id: int):
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
             "remaining_seconds": runs.remaining_seconds(run),
+            "elapsed_seconds": runs.elapsed_seconds(run),
             "started_at": run["started_at"],
             "ended_at": run["ended_at"],
             "duration_seconds": run["duration_seconds"],
             "challenge_complete": run["status"] == "completed",
+            "over_time": runs.elapsed_seconds(run) > int(meta.get("timebox_minutes", 60)) * 60,
         }
     )
 
@@ -200,9 +202,8 @@ def file(challenge: str, run_id: int, file_id: str):
 
 
 def _reject_if_not_active(run: dict):
-    """Return a (json, status) 403 tuple if the run can't be modified, else None."""
-    if run["status"] == "expired":
-        return jsonify({"error": "time_up"}), 403
+    """Reject editing/running only for finished attempts. The timebox is a target,
+    not a lock: an in-progress run stays editable/runnable even past the limit."""
     if run["status"] != "in_progress":
         return jsonify({"error": "read_only"}), 403
     return None
@@ -286,6 +287,8 @@ def run_tests(challenge: str, run_id: int):
             "status": run["status"],
             "duration_seconds": run["duration_seconds"],
             "ended_at": run["ended_at"],
+            "over_time": bool(run["duration_seconds"])
+            and run["duration_seconds"] > run["timebox_minutes"] * 60,
         }
     )
 

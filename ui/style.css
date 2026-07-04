@@ -96,6 +96,7 @@ a.brand:hover { color: #fff; }
   color: var(--text);
 }
 .timer.expired { color: #fff; background: var(--fail); border-color: var(--fail); }
+.timer.overtime { color: #1e1400; background: #d7a53a; border-color: #d7a53a; }
 .timer.done { color: #04231d; background: var(--ok); border-color: var(--ok); }
 
 .success-banner {
