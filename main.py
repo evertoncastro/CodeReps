@@ -59,6 +59,7 @@ def _run_summary(run: dict) -> dict:
     """Fields for the attempts list (no solution body)."""
     return {
         "id": run["id"],
+        "number": run["number"],
         "status": run["status"],
         "started_at": run["started_at"],
         "ended_at": run["ended_at"],
@@ -148,6 +149,7 @@ def state(challenge: str, run_id: int):
         {
             "challenge": challenge,
             "run_id": run_id,
+            "number": run["number"],
             "status": run["status"],
             "read_only": run["status"] != "in_progress",
             "levels": levels,

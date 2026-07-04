@@ -25,7 +25,8 @@ def _conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute(
         "CREATE TABLE IF NOT EXISTS runs ("
-        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"        # global id (used in URLs)
+        "  number INTEGER,"                               # per-challenge attempt number (1, 2, ...)
         "  challenge TEXT NOT NULL,"
         "  status TEXT NOT NULL DEFAULT 'in_progress',"  # in_progress | completed | expired
         "  started_at REAL NOT NULL,"
@@ -47,6 +48,15 @@ def _conn() -> sqlite3.Connection:
         conn.execute("ALTER TABLE runs ADD COLUMN spent_seconds REAL NOT NULL DEFAULT 0")
     if "resumed_at" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN resumed_at REAL")
+    if "number" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN number INTEGER")
+    # Backfill per-challenge attempt numbers (by creation order) for legacy rows.
+    conn.execute(
+        "UPDATE runs SET number = ("
+        "  SELECT COUNT(*) FROM runs r2 "
+        "  WHERE r2.challenge = runs.challenge AND r2.id <= runs.id"
+        ") WHERE number IS NULL"
+    )
     # Revive legacy 'expired' runs: expiry no longer locks a run, so make them
     # continuable again (keeping the time already spent as overtime).
     conn.execute(
@@ -72,11 +82,15 @@ def create_run(challenge: str, initial_solution: str, timebox_minutes: int,
                total_levels: int) -> int:
     now = time.time()
     with _conn() as conn:
+        number = conn.execute(
+            "SELECT COALESCE(MAX(number), 0) + 1 FROM runs WHERE challenge = ?", (challenge,)
+        ).fetchone()[0]
         cur = conn.execute(
-            "INSERT INTO runs (challenge, status, started_at, completed_level, "
+            "INSERT INTO runs (challenge, number, status, started_at, completed_level, "
             "total_levels, timebox_minutes, initial_solution, solution) "
-            "VALUES (?, 'in_progress', ?, 0, ?, ?, ?, ?)",
-            (challenge, now, total_levels, timebox_minutes, initial_solution, initial_solution),
+            "VALUES (?, ?, 'in_progress', ?, 0, ?, ?, ?, ?)",
+            (challenge, number, now, total_levels, timebox_minutes,
+             initial_solution, initial_solution),
         )
         return cur.lastrowid
 

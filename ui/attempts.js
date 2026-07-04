@@ -26,8 +26,8 @@ async function newAttempt() {
   if (d.run_id) location.href = `/${CID}/run/${d.run_id}`;
 }
 
-async function deleteAttempt(id) {
-  if (!confirm(`Delete attempt #${id}? This cannot be undone.`)) return;
+async function deleteAttempt(id, number) {
+  if (!confirm(`Delete attempt #${number}? This cannot be undone.`)) return;
   await fetch(`/api/${CID}/run/${id}`, { method: "DELETE" });
   load();
 }
@@ -56,7 +56,7 @@ async function load() {
     card.href = `/${CID}/run/${r.id}`;
     const action = r.status === "in_progress" ? "Continue" : "View";
     card.innerHTML =
-      `<h2>Attempt #${r.id} ` +
+      `<h2>Attempt #${r.number} ` +
       `<span class="attempt-status ${r.status}">${labels[r.status] || r.status}</span></h2>` +
       `<div class="meta">` +
       `<span>started: ${fmtDate(r.started_at)}</span>` +
@@ -72,7 +72,7 @@ async function load() {
     del.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      deleteAttempt(r.id);
+      deleteAttempt(r.id, r.number);
     };
     card.appendChild(del);
 
