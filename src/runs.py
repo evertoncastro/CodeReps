@@ -47,6 +47,12 @@ def _conn() -> sqlite3.Connection:
         conn.execute("ALTER TABLE runs ADD COLUMN spent_seconds REAL NOT NULL DEFAULT 0")
     if "resumed_at" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN resumed_at REAL")
+    # Revive legacy 'expired' runs: expiry no longer locks a run, so make them
+    # continuable again (keeping the time already spent as overtime).
+    conn.execute(
+        "UPDATE runs SET status='in_progress', ended_at=NULL, duration_seconds=NULL "
+        "WHERE status='expired'"
+    )
     return conn
 
 
