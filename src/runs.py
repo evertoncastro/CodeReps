@@ -38,7 +38,8 @@ def _conn() -> sqlite3.Connection:
         "  total_levels INTEGER NOT NULL,"
         "  timebox_minutes INTEGER NOT NULL,"
         "  initial_solution TEXT NOT NULL DEFAULT '',"
-        "  solution TEXT NOT NULL DEFAULT ''"
+        "  solution TEXT NOT NULL DEFAULT '',"
+        "  archived INTEGER NOT NULL DEFAULT 0"
         ")"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_challenge ON runs(challenge, id DESC)")
@@ -50,6 +51,8 @@ def _conn() -> sqlite3.Connection:
         conn.execute("ALTER TABLE runs ADD COLUMN resumed_at REAL")
     if "number" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN number INTEGER")
+    if "archived" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
     # Backfill per-challenge attempt numbers (by creation order) for legacy rows.
     conn.execute(
         "UPDATE runs SET number = ("
@@ -101,18 +104,21 @@ def get_run(run_id: int) -> dict | None:
         return dict(row) if row is not None else None
 
 
-def list_runs(challenge: str) -> list[dict]:
-    """All runs for a challenge, newest first."""
+def list_runs(challenge: str, archived: bool = False) -> list[dict]:
+    """Runs for a challenge, newest first. Excludes archived unless asked."""
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM runs WHERE challenge = ? ORDER BY id DESC", (challenge,)
+            "SELECT * FROM runs WHERE challenge = ? AND archived = ? ORDER BY id DESC",
+            (challenge, 1 if archived else 0),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def delete_run(run_id: int) -> None:
+def set_archived(run_id: int, archived: bool) -> None:
     with _conn() as conn:
-        conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+        conn.execute(
+            "UPDATE runs SET archived = ? WHERE id = ?", (1 if archived else 0, run_id)
+        )
 
 
 def update_solution(run_id: int, code: str) -> None:

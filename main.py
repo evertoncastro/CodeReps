@@ -108,20 +108,29 @@ def challenges():
 def list_runs(challenge: str):
     _require(challenge)
     meta = core.read_challenge_meta(challenge)
+    archived = request.args.get("archived") in ("1", "true")
     return jsonify(
         {
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
             "total_levels": len(core.available_levels(challenge)),
-            "runs": [_run_summary(r) for r in runs.list_runs(challenge)],
+            "archived": archived,
+            "runs": [_run_summary(r) for r in runs.list_runs(challenge, archived)],
         }
     )
 
 
-@app.delete("/api/<challenge>/run/<int:run_id>")
-def delete_run(challenge: str, run_id: int):
+@app.post("/api/<challenge>/run/<int:run_id>/archive")
+def archive_run(challenge: str, run_id: int):
     _require_run(challenge, run_id)
-    runs.delete_run(run_id)
+    runs.set_archived(run_id, True)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/<challenge>/run/<int:run_id>/unarchive")
+def unarchive_run(challenge: str, run_id: int):
+    _require_run(challenge, run_id)
+    runs.set_archived(run_id, False)
     return jsonify({"ok": True})
 
 

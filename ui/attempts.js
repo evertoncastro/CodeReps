@@ -2,6 +2,7 @@
 
 // The attempts page URL is /<challenge>.
 const CID = location.pathname.replace(/^\/+|\/+$/g, "");
+let showArchived = false;
 
 function fmtDur(s) {
   s = Math.max(0, Math.round(s || 0));
@@ -26,15 +27,24 @@ async function newAttempt() {
   if (d.run_id) location.href = `/${CID}/run/${d.run_id}`;
 }
 
-async function deleteAttempt(id, number) {
-  if (!confirm(`Delete attempt #${number}? This cannot be undone.`)) return;
-  await fetch(`/api/${CID}/run/${id}`, { method: "DELETE" });
+async function setArchived(id, archived) {
+  await fetch(`/api/${CID}/run/${id}/${archived ? "archive" : "unarchive"}`, { method: "POST" });
+  load();
+}
+
+function toggleArchived() {
+  showArchived = !showArchived;
   load();
 }
 
 async function load() {
   document.getElementById("btn-new").onclick = newAttempt;
-  const res = await fetch(`/api/${CID}/runs`);
+  const toggle = document.getElementById("btn-toggle");
+  toggle.onclick = toggleArchived;
+  toggle.textContent = showArchived ? "Show active" : "Show archived";
+  toggle.classList.toggle("active", showArchived);
+
+  const res = await fetch(`/api/${CID}/runs${showArchived ? "?archived=1" : ""}`);
   const data = await res.json();
 
   if (data.title) {
@@ -45,7 +55,10 @@ async function load() {
   const root = document.getElementById("challenge-list");
   root.innerHTML = "";
   if (!data.runs.length) {
-    root.innerHTML = '<p class="muted">No attempts yet. Click “New attempt” to start.</p>';
+    root.innerHTML =
+      '<p class="muted">' +
+      (showArchived ? "No archived attempts." : "No attempts yet. Click “New attempt” to start.") +
+      "</p>";
     return;
   }
 
@@ -65,16 +78,16 @@ async function load() {
       `<span class="status">${action} →</span>` +
       `</div>`;
 
-    const del = document.createElement("button");
-    del.className = "attempt-delete";
-    del.title = "Delete attempt";
-    del.textContent = "🗑";
-    del.onclick = (e) => {
+    const btn = document.createElement("button");
+    btn.className = "attempt-archive";
+    btn.title = showArchived ? "Unarchive attempt" : "Archive attempt";
+    btn.textContent = showArchived ? "↩" : "🗄";
+    btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      deleteAttempt(r.id, r.number);
+      setArchived(r.id, !showArchived);
     };
-    card.appendChild(del);
+    card.appendChild(btn);
 
     root.appendChild(card);
   });
