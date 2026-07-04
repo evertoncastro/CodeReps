@@ -82,6 +82,9 @@ a.brand:hover { color: #fff; }
 .attempt-status.in_progress { color: var(--accent); background: rgba(14, 99, 156, 0.2); }
 .attempt-status.completed { color: var(--ok); background: rgba(78, 201, 176, 0.15); }
 .attempt-status.expired { color: var(--fail); background: rgba(244, 135, 113, 0.15); }
+.attempt-status.archived-tag { color: var(--muted); background: #333; }
+.attempt-card.archived { opacity: 0.6; }
+.attempt-card.archived:hover { opacity: 0.85; }
 
 /* Read-only performance summary */
 .perf { line-height: 1.7; }

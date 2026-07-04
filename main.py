@@ -60,6 +60,7 @@ def _run_summary(run: dict) -> dict:
     return {
         "id": run["id"],
         "number": run["number"],
+        "archived": bool(run["archived"]),
         "status": run["status"],
         "started_at": run["started_at"],
         "ended_at": run["ended_at"],
@@ -108,14 +109,14 @@ def challenges():
 def list_runs(challenge: str):
     _require(challenge)
     meta = core.read_challenge_meta(challenge)
-    archived = request.args.get("archived") in ("1", "true")
+    include_archived = request.args.get("all") in ("1", "true")
     return jsonify(
         {
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
             "total_levels": len(core.available_levels(challenge)),
-            "archived": archived,
-            "runs": [_run_summary(r) for r in runs.list_runs(challenge, archived)],
+            "include_archived": include_archived,
+            "runs": [_run_summary(r) for r in runs.list_runs(challenge, include_archived)],
         }
     )
 

@@ -104,13 +104,19 @@ def get_run(run_id: int) -> dict | None:
         return dict(row) if row is not None else None
 
 
-def list_runs(challenge: str, archived: bool = False) -> list[dict]:
-    """Runs for a challenge, newest first. Excludes archived unless asked."""
+def list_runs(challenge: str, include_archived: bool = False) -> list[dict]:
+    """Runs for a challenge, newest first. Excludes archived unless
+    include_archived is set (which returns BOTH active and archived)."""
     with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM runs WHERE challenge = ? AND archived = ? ORDER BY id DESC",
-            (challenge, 1 if archived else 0),
-        ).fetchall()
+        if include_archived:
+            rows = conn.execute(
+                "SELECT * FROM runs WHERE challenge = ? ORDER BY id DESC", (challenge,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM runs WHERE challenge = ? AND archived = 0 ORDER BY id DESC",
+                (challenge,),
+            ).fetchall()
         return [dict(r) for r in rows]
 
 

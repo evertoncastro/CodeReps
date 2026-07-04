@@ -43,10 +43,10 @@ async function load() {
   document.getElementById("btn-new").onclick = newAttempt;
   const toggle = document.getElementById("btn-toggle");
   toggle.onclick = toggleArchived;
-  toggle.textContent = showArchived ? "Show active" : "Show archived";
+  toggle.textContent = showArchived ? "Hide archived" : "Show archived";
   toggle.classList.toggle("active", showArchived);
 
-  const res = await fetch(`/api/${CID}/runs${showArchived ? "?archived=1" : ""}`);
+  const res = await fetch(`/api/${CID}/runs${showArchived ? "?all=1" : ""}`);
   const data = await res.json();
 
   if (data.title) {
@@ -57,22 +57,21 @@ async function load() {
   const root = document.getElementById("challenge-list");
   root.innerHTML = "";
   if (!data.runs.length) {
-    root.innerHTML =
-      '<p class="muted">' +
-      (showArchived ? "No archived attempts." : "No attempts yet. Click “New attempt” to start.") +
-      "</p>";
+    root.innerHTML = '<p class="muted">No attempts yet. Click “New attempt” to start.</p>';
     return;
   }
 
   const labels = { in_progress: "In progress", completed: "Completed", expired: "Expired" };
   data.runs.forEach((r) => {
     const card = document.createElement("a");
-    card.className = "challenge-card attempt-card";
+    card.className = "challenge-card attempt-card" + (r.archived ? " archived" : "");
     card.href = `/${CID}/run/${r.id}`;
     const action = r.status === "in_progress" ? "Continue" : "View";
     card.innerHTML =
       `<h2>Attempt #${r.number} ` +
-      `<span class="attempt-status ${r.status}">${labels[r.status] || r.status}</span></h2>` +
+      `<span class="attempt-status ${r.status}">${labels[r.status] || r.status}</span>` +
+      (r.archived ? `<span class="attempt-status archived-tag">Archived</span>` : "") +
+      `</h2>` +
       `<div class="meta">` +
       `<span>started: ${fmtDate(r.started_at)}</span>` +
       `<span>levels: ${r.completed_level}/${r.total_levels}</span>` +
@@ -82,12 +81,12 @@ async function load() {
 
     const btn = document.createElement("button");
     btn.className = "attempt-archive";
-    btn.title = showArchived ? "Unarchive attempt" : "Archive attempt";
-    btn.textContent = showArchived ? "↩" : "🗄";
+    btn.title = r.archived ? "Unarchive attempt" : "Archive attempt";
+    btn.textContent = r.archived ? "↩" : "🗄";
     btn.onclick = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      setArchived(r.id, !showArchived, r.number);
+      setArchived(r.id, !r.archived, r.number);
     };
     card.appendChild(btn);
 
