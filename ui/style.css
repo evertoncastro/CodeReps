@@ -238,6 +238,28 @@ a.brand:hover { color: #fff; }
   overflow-wrap: anywhere;    /* break long tokens (paths) so nothing overflows */
   overflow-x: auto;           /* last-resort scroll for unbreakable code lines */
 }
+.test-output {
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  background: #2d2d2d;
+  border-left: 3px solid var(--muted, #888);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+/* Debug output takes the colour of its test's status. */
+.test.ok .test-output {
+  border-left-color: var(--ok);
+  color: var(--ok);
+}
+.test.fail .test-output,
+.test.error .test-output {
+  border-left-color: var(--fail);
+  color: var(--fail);
+}
 .summary { margin: 8px 0; font-weight: 600; }
 .summary.ok { color: var(--ok); }
 .summary.fail { color: var(--fail); }

@@ -407,6 +407,12 @@ function testRow(t) {
     pre.textContent = t.message;
     div.appendChild(pre);
   }
+  if (t.output) {
+    const out = document.createElement("pre");
+    out.className = "test-output";
+    out.textContent = t.output;
+    div.appendChild(out);
+  }
   return div;
 }
 

@@ -13,6 +13,8 @@ on the large-input performance tests) get flagged, without killing the whole run
 Statuses: "ok" | "fail" | "error" | "skip".
 """
 
+import contextlib
+import io
 import json
 import os
 import signal
@@ -22,6 +24,10 @@ import unittest
 
 CASE_TIMEOUT = float(os.environ.get("ICA_CASE_TIMEOUT", "5"))
 _USE_ALARM = hasattr(signal, "SIGALRM")
+
+# Cap per-test captured output so a chatty/looping solution can't produce a
+# multi-megabyte JSON payload.
+_MAX_OUTPUT = 8000
 
 
 class TimeBudgetExceeded(Exception):
@@ -99,13 +105,25 @@ def main() -> None:
         # alphabetically by default), keeping modules in the given order.
         tests = sorted(_iter_tests(suite), key=_definition_line)
         for test in tests:
+            before = len(result.records)
+            # Capture anything the test / solution writes to stdout or stderr
+            # (e.g. debug print()s) so it can be shown next to the test result
+            # instead of corrupting the JSON we emit on the real stdout.
+            buf = io.StringIO()
             if _USE_ALARM:
                 signal.setitimer(signal.ITIMER_REAL, CASE_TIMEOUT)
             try:
-                test(result)  # runs the single test, updating `result`
+                with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                    test(result)  # runs the single test, updating `result`
             finally:
                 if _USE_ALARM:
                     signal.setitimer(signal.ITIMER_REAL, 0)
+            output = buf.getvalue()
+            if len(output) > _MAX_OUTPUT:
+                output = output[:_MAX_OUTPUT] + "\n…(output truncated)"
+            if output:
+                for rec in result.records[before:]:
+                    rec["output"] = output
 
     passed = bool(result.records) and all(r["status"] == "ok" for r in result.records)
     print(json.dumps({"passed": passed, "tests": result.records}))
