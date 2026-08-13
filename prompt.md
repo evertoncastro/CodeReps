@@ -1,7 +1,7 @@
-# CodeSignal ICA Mock Assessment — Authoring Spec
+# ICA Mock Assessment — Authoring Spec
 
 Este arquivo é a especificação que **o assistente (esta sessão de LLM)** segue ao
-gerar desafios de treino no estilo CodeSignal Industry Coding Assessment (ICA).
+gerar desafios de treino no estilo Industry Coding Assessment (ICA).
 Não há geração via API externa: o assistente escreve os arquivos diretamente.
 
 O objetivo é produzir assessments que se pareçam com o ICA real usado por empresas
