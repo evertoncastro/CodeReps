@@ -1,8 +1,10 @@
-# ICA Mock Assessment
+# Coding Assessment Trainer
 
-A local, single-user web IDE for practising **Industry Coding Assessment (ICA)**–style
-challenges: a business-domain Python system that grows over 4 progressive levels, with
-a timer, hidden tests and a level-by-level reveal.
+A local, single-user web IDE for practising coding assessments. Each assessment
+**format** defines what a challenge looks like and how it is graded; the one shipped
+today is **ICA** (Industry Coding Assessment): a business-domain Python system that
+grows over 4 progressive levels, with a timer, hidden tests and a level-by-level
+reveal.
 
 ---
 
@@ -36,14 +38,14 @@ python main.py
 ```
 
 ```
-ICA IDE at http://127.0.0.1:5000  (Ctrl+C to quit)
+Assessment IDE at http://127.0.0.1:5000  (Ctrl+C to quit)
 ```
 
 Open <http://127.0.0.1:5000>.
 
 ## Taking an assessment
 
-1. Pick a challenge from the landing page.
+1. Pick a format on the landing page, then a challenge.
 2. Click **New attempt** — this starts the timer and opens the IDE with the level 1
    requirements, a starter `solution.py` and the level's public tests (read-only).
 3. Write your solution in the editor. It autosaves as you type.
@@ -83,19 +85,22 @@ Diagrams of the same picture live in `COMPONENTS.md`.
 ```
 main.py         Flask app: pages, static assets and the JSON API
 src/            challenge discovery, test execution, attempt persistence
+src/formats/    one module per assessment format (ica.py today)
 ui/             the frontend (plain HTML/CSS/JS, no build)
-challenges/     the challenge library, one folder per challenge
-prompt.md       authoring spec for new challenges (written in pt-BR)
+challenges/     the challenge library, partitioned by format
+prompt.md       authoring spec for new ICA challenges (written in pt-BR)
 ```
 
-## The challenge library
+## Formats and challenges
 
-Each folder under `challenges/` is one challenge, and its name is both the id and the
-URL route. A folder holds its metadata (`challenge.json`), a starter template, and per
-level a markdown statement plus a public and a hidden `unittest` module. A challenge is
-picked up automatically as soon as its folder exists — there is no registration step.
+`challenges/` is partitioned by format, mirroring the URL: `challenges/ica/banking_system`
+is served at `/ica/banking_system`. A challenge folder holds its metadata
+(`challenge.json`) plus whatever its format defines — for ICA, a starter template and,
+per level, a markdown statement with a public and a hidden `unittest` module. Both
+formats and challenges are picked up automatically; there is no registration step
+beyond listing a new format module in `src/formats/__init__.py`.
 
-Bundled challenges: `banking_system`, `cloud_storage`, `support_tickets`,
+Bundled ICA challenges: `banking_system`, `cloud_storage`, `support_tickets`,
 `warehouse_inventory`.
 
 ## Attempts
@@ -115,7 +120,9 @@ instead of hanging the run.
 
 ## Gating and reveal
 
-To pass level *N*, every test from levels 1..*N* must pass — public and hidden alike,
-so earlier levels act as regression tests. Public test sources are shown in the editor;
-hidden ones are never served to the browser, only their results. Level *N+1* stays
-locked until *N* passes, so you never see future requirements early.
+The core counts **stages** — whatever unit of work a format defines (a level, for ICA).
+Deciding whether a stage passed is the format's call. For ICA, every test from stages
+1..*N* must pass — public and hidden alike, so earlier levels act as regression tests.
+Public test sources are shown in the editor; hidden ones are never served to the
+browser, only their results. Stage *N+1* stays locked until *N* passes, so you never see
+future requirements early.

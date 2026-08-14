@@ -1,14 +1,16 @@
 "use strict";
 
-// The IDE URL is /<challenge>/run/<runId>.
-const M = location.pathname.match(/^\/([^/]+)\/run\/(\d+)$/);
-const CHALLENGE = M ? M[1] : "";
-const RUN_ID = M ? M[2] : "";
-const API = `/api/${CHALLENGE}/run/${RUN_ID}`;
+// The IDE URL is /<format>/<challenge>/run/<runId>.
+const M = location.pathname.match(/^\/([^/]+)\/([^/]+)\/run\/(\d+)$/);
+const FORMAT = M ? M[1] : "";
+const CHALLENGE = M ? M[2] : "";
+const RUN_ID = M ? M[3] : "";
+const API = `/api/${FORMAT}/${CHALLENGE}/run/${RUN_ID}`;
 
 let editor = null;
-let currentLevel = null;
-let levels = [];
+let currentStage = null;
+let stages = [];
+let stageLabel = "Stage";
 let readOnly = false;
 
 // File state.
@@ -57,7 +59,7 @@ function startTimer(remainingSeconds) {
   }, 1000);
 }
 
-// Challenge finished (last level passed): stop the clock and turn it green.
+// Challenge finished (last stage passed): stop the clock and turn it green.
 function markComplete() {
   if (timerInterval) clearInterval(timerInterval);
   const t = document.getElementById("timer");
@@ -68,9 +70,10 @@ function markComplete() {
 function successBanner(overTime) {
   const div = document.createElement("div");
   div.className = "success-banner";
+  const all = `all ${stageLabel.toLowerCase()}s passed`;
   div.textContent = overTime
-    ? "🎉 Challenge complete — all levels passed (over the time limit)."
-    : "🎉 Challenge complete — all levels passed!";
+    ? `🎉 Challenge complete — ${all} (over the time limit).`
+    : `🎉 Challenge complete — ${all}!`;
   return div;
 }
 
@@ -143,16 +146,17 @@ async function api(path, opts) {
 
 async function loadState() {
   const state = await api(`${API}/state`);
-  levels = state.levels;
-  currentLevel = state.current;
+  stages = state.stages;
+  currentStage = state.current;
+  stageLabel = state.stage_label || "Stage";
   readOnly = state.read_only;
-  document.querySelector(".brand").setAttribute("href", `/${CHALLENGE}`);
+  document.querySelector(".brand").setAttribute("href", `/${FORMAT}/${CHALLENGE}`);
   if (state.title) {
     document.getElementById("brand-title").textContent = state.title;
-    document.title = `${state.title} — ICA`;
+    document.title = state.title;
   }
-  renderLevelTabs();
-  if (currentLevel) await loadLevel(currentLevel);
+  renderStageTabs();
+  if (currentStage) await loadStage(currentStage);
   if (!editor) await initEditor(state.solution || "");
   else models["solution"].setValue(state.solution || "");
   await refreshFiles();
@@ -188,8 +192,8 @@ function renderPerformance(state) {
   const sum = document.createElement("div");
   sum.className = "summary " + (done ? "ok" : "fail");
   sum.textContent = done
-    ? `Completed all ${state.total_levels} levels`
-    : `Reached level ${state.completed}/${state.total_levels}`;
+    ? `Completed all ${state.total_stages} ${stageLabel.toLowerCase()}s`
+    : `Reached ${stageLabel.toLowerCase()} ${state.completed}/${state.total_stages}`;
   body.appendChild(sum);
 
   const limit = (state.timebox_minutes || 0) * 60;
@@ -201,7 +205,7 @@ function renderPerformance(state) {
   const info = document.createElement("div");
   info.className = "perf muted";
   info.innerHTML =
-    `<div>Levels completed: ${state.completed}/${state.total_levels}</div>` +
+    `<div>${stageLabel}s completed: ${state.completed}/${state.total_stages}</div>` +
     `<div>Time taken: ${state.duration_seconds != null ? fmtDuration(state.duration_seconds) : "—"}</div>` +
     withinLine +
     `<div>Started: ${fmtDate(state.started_at)}</div>` +
@@ -217,25 +221,27 @@ async function refreshFiles() {
 
 function updateRunButton() {
   const btn = document.getElementById("btn-run");
-  btn.textContent = currentLevel ? `Run tests for level ${currentLevel}` : "Run tests";
+  btn.textContent = currentStage
+    ? `Run tests for ${stageLabel.toLowerCase()} ${currentStage}`
+    : "Run tests";
 }
 
-async function loadLevel(n) {
-  currentLevel = n;
-  renderLevelTabs();
+async function loadStage(n) {
+  currentStage = n;
+  renderStageTabs();
   updateRunButton();
-  const data = await api(`${API}/level/${n}`);
-  document.getElementById("readme").innerHTML = marked.parse(data.readme_md || "");
+  const data = await api(`${API}/stage/${n}`);
+  document.getElementById("readme").innerHTML = marked.parse(data.doc_md || "");
 }
 
-function renderLevelTabs() {
-  const nav = document.getElementById("level-tabs");
+function renderStageTabs() {
+  const nav = document.getElementById("stage-tabs");
   nav.innerHTML = "";
-  levels.forEach((n) => {
+  stages.forEach((n) => {
     const b = document.createElement("button");
-    b.textContent = `Level ${n}`;
-    if (n === currentLevel) b.classList.add("active");
-    b.onclick = () => loadLevel(n);
+    b.textContent = `${stageLabel} ${n}`;
+    if (n === currentStage) b.classList.add("active");
+    b.onclick = () => loadStage(n);
     nav.appendChild(b);
   });
 }
@@ -325,8 +331,8 @@ function closeFile(id) {
 // ---- actions ----
 async function newAttempt() {
   pauseTimer(); // stop the clock on the attempt we're leaving
-  const res = await api(`/api/${CHALLENGE}/runs`, { method: "POST" });
-  if (res && res.run_id) location.href = `/${CHALLENGE}/run/${res.run_id}`;
+  const res = await api(`/api/${FORMAT}/${CHALLENGE}/runs`, { method: "POST" });
+  if (res && res.run_id) location.href = `/${FORMAT}/${CHALLENGE}/run/${res.run_id}`;
 }
 
 async function runTests() {
@@ -337,12 +343,12 @@ async function runTests() {
   const data = await api(`${API}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ level: currentLevel, code: solutionValue() }),
+    body: JSON.stringify({ stage: currentStage, code: solutionValue() }),
   });
   if (data.error === "read_only") return;
   if (Array.isArray(data.unlocked)) {
-    levels = data.unlocked;
-    renderLevelTabs();
+    stages = data.unlocked;
+    renderStageTabs();
     await refreshFiles();
   }
   renderResults(data);
@@ -352,8 +358,8 @@ async function runTests() {
     editor.updateOptions({ readOnly: true });
     document.getElementById("btn-run").disabled = true;
   }
-  // Passing unlocks the next level — move to it automatically.
-  if (data.unlocked_now) await loadLevel(data.unlocked_now);
+  // Passing unlocks the next stage — move to it automatically.
+  if (data.unlocked_now) await loadStage(data.unlocked_now);
 }
 
 function renderResults(data) {
@@ -367,7 +373,7 @@ function renderResults(data) {
   if (data.unlocked_now) {
     const u = document.createElement("div");
     u.className = "summary ok";
-    u.textContent = `🎉 Level ${data.unlocked_now} unlocked!`;
+    u.textContent = `🎉 ${stageLabel} ${data.unlocked_now} unlocked!`;
     body.appendChild(u);
   }
 
@@ -375,8 +381,8 @@ function renderResults(data) {
   const sum = document.createElement("div");
   sum.className = "summary " + (pub.passed ? "ok" : "fail");
   sum.textContent = pub.passed
-    ? `Public tests PASSED (levels 1..${currentLevel})`
-    : `Public tests FAILED (levels 1..${currentLevel})`;
+    ? `Public tests PASSED (${stageLabel.toLowerCase()}s 1..${currentStage})`
+    : `Public tests FAILED (${stageLabel.toLowerCase()}s 1..${currentStage})`;
   body.appendChild(sum);
 
   pub.tests.forEach((t) => body.appendChild(testRow(t)));

@@ -1,16 +1,17 @@
 ---
 name: create-challenge
-description: Author a new ICA mock-assessment challenge for this project — a business-domain coding problem with 4 progressive levels and real public/hidden unittest files, mirroring challenges/warehouse_inventory. Use when the user asks to create, add, or generate a new challenge / coding assessment / practice problem in this repo.
+description: Author a new ICA mock-assessment challenge for this project — a business-domain coding problem with 4 progressive levels and real public/hidden unittest files, mirroring challenges/ica/warehouse_inventory. Use when the user asks to create, add, or generate a new challenge / coding assessment / practice problem in this repo.
 ---
 
 # Create a new ICA challenge
 
-Challenges live under `challenges/<id>/`. The folder name is the challenge id and
-its URL route (e.g. `challenges/warehouse_inventory` → `/warehouse_inventory`). The
-app auto-discovers any folder containing `challenge.json` — **no code changes are
+ICA is one of the app's assessment formats (see `src/formats/ica.py`), so its
+challenges live under `challenges/ica/<id>/`. Both names are URL segments: 
+`challenges/ica/warehouse_inventory` → `/ica/warehouse_inventory`. The app
+auto-discovers any folder containing `challenge.json` — **no code changes are
 needed** to add a challenge.
 
-Use `challenges/warehouse_inventory/` as the canonical example: read its
+Use `challenges/ica/warehouse_inventory/` as the canonical example: read its
 `challenge.json`, `solution_template.py`, and `level_1..4_*` files to copy the exact
 conventions. The design philosophy (domains, difficulty curve) is in `prompt.md` at
 the repo root — but the concrete file/format rules below reflect the current code and
@@ -18,10 +19,10 @@ win over any drift in `prompt.md`.
 
 ## What to produce
 
-For a new challenge id `<id>`, create `challenges/<id>/` with:
+For a new challenge id `<id>`, create `challenges/ica/<id>/` with:
 
 ```
-challenges/<id>/
+challenges/ica/<id>/
   challenge.json              # {"title": "...", "timebox_minutes": 60}
   solution_template.py        # starter interface stub (never shown as a file to the user)
   level_1.md                  # requirements (human-readable) + "Hidden Tests Check For"
@@ -137,7 +138,7 @@ Do this in a temp copy so you never touch the challenge's scratch `solution.py`:
 
 ```bash
 cd /home/everton/dev/personal/justcode/codesignal
-rm -rf /tmp/ica_verify && cp -r challenges/<id> /tmp/ica_verify
+rm -rf /tmp/ica_verify && cp -r challenges/ica/<id> /tmp/ica_verify
 cat > /tmp/ica_verify/solution.py <<'PY'
 # ... a full correct reference implementation of all 4 levels ...
 PY
@@ -156,11 +157,11 @@ public tests (run the same command with `solution_template.py` copied in as
 **Then remove the reference solution before closing out the challenge.** The reference
 exists only for this verification — it must never ship (it would be the answer key).
 Delete the temp dir (`rm -rf /tmp/ica_verify`) and confirm no `solution.py` or reference
-implementation was left inside `challenges/<id>/`. Only after tests pass and the
+implementation was left inside `challenges/ica/<id>/`. Only after tests pass and the
 reference is removed do you report the challenge as ready.
 
 ## After creating
 
-The challenge appears automatically on the landing page (`/`) and at `/<id>`. If a dev
+The challenge appears automatically at `/ica` and at `/ica/<id>`. If a dev
 server is running, no restart is needed for new files; if you added it while the server
 was down, just `python main.py`.

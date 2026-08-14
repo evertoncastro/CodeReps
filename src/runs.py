@@ -1,12 +1,14 @@
-"""Attempt (run) persistence for the ICA mock assessment (stdlib sqlite3).
+"""Attempt (run) persistence (stdlib sqlite3). Format-agnostic.
 
 Each time a candidate starts a challenge, a run is created. A run holds its own
-timer (started_at + timebox), its own progress (completed_level), and its own
+timer (started_at + timebox), its own progress (completed_stages), and its own
 solution snapshot (the source of truth for that attempt's code). Runs are
-per-challenge history; the landing page lists them newest-first.
+history per (format, challenge); the attempts page lists them newest-first.
 
-Single-user, local; the DB is challenges/progress.db (shared with the old
-progress table, which is no longer used).
+A "stage" is whatever unit of work the assessment format defines — a level for
+the ICA format, an exercise for a drills format. This module only counts them.
+
+Single-user, local; the DB is challenges/progress.db.
 """
 
 import os
@@ -26,7 +28,8 @@ def _conn() -> sqlite3.Connection:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS runs ("
         "  id INTEGER PRIMARY KEY AUTOINCREMENT,"        # global id (used in URLs)
-        "  number INTEGER,"                               # per-challenge attempt number (1, 2, ...)
+        "  number INTEGER,"                               # attempt number within (format, challenge)
+        "  format TEXT NOT NULL DEFAULT 'ica',"           # assessment format id
         "  challenge TEXT NOT NULL,"
         "  status TEXT NOT NULL DEFAULT 'in_progress',"  # in_progress | completed | expired
         "  started_at REAL NOT NULL,"
@@ -34,15 +37,14 @@ def _conn() -> sqlite3.Connection:
         "  duration_seconds REAL,"
         "  spent_seconds REAL NOT NULL DEFAULT 0,"   # active time already accumulated (while paused)
         "  resumed_at REAL,"                          # start of the current active session; NULL when paused
-        "  completed_level INTEGER NOT NULL DEFAULT 0,"
-        "  total_levels INTEGER NOT NULL,"
+        "  completed_stages INTEGER NOT NULL DEFAULT 0,"
+        "  total_stages INTEGER NOT NULL,"
         "  timebox_minutes INTEGER NOT NULL,"
         "  initial_solution TEXT NOT NULL DEFAULT '',"
         "  solution TEXT NOT NULL DEFAULT '',"
         "  archived INTEGER NOT NULL DEFAULT 0"
         ")"
     )
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_challenge ON runs(challenge, id DESC)")
     # Migrate older DBs that predate the pause/resume columns.
     cols = [r[1] for r in conn.execute("PRAGMA table_info(runs)").fetchall()]
     if "spent_seconds" not in cols:
@@ -53,11 +55,24 @@ def _conn() -> sqlite3.Connection:
         conn.execute("ALTER TABLE runs ADD COLUMN number INTEGER")
     if "archived" not in cols:
         conn.execute("ALTER TABLE runs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
-    # Backfill per-challenge attempt numbers (by creation order) for legacy rows.
+    # Migrate DBs that predate pluggable formats: every run there was an ICA run,
+    # and its "levels" are what the core now calls stages.
+    if "format" not in cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN format TEXT NOT NULL DEFAULT 'ica'")
+    if "completed_level" in cols:
+        conn.execute("ALTER TABLE runs RENAME COLUMN completed_level TO completed_stages")
+    if "total_levels" in cols:
+        conn.execute("ALTER TABLE runs RENAME COLUMN total_levels TO total_stages")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_runs_format_challenge "
+        "ON runs(format, challenge, id DESC)"
+    )
+    # Backfill attempt numbers (by creation order, within a challenge) for legacy rows.
     conn.execute(
         "UPDATE runs SET number = ("
         "  SELECT COUNT(*) FROM runs r2 "
-        "  WHERE r2.challenge = runs.challenge AND r2.id <= runs.id"
+        "  WHERE r2.format = runs.format AND r2.challenge = runs.challenge "
+        "    AND r2.id <= runs.id"
         ") WHERE number IS NULL"
     )
     # Revive legacy 'expired' runs: expiry no longer locks a run, so make them
@@ -81,18 +96,19 @@ def _active_spent(run: dict) -> float:
 # past the limit until the candidate completes it (that overtime is a metric).
 
 
-def create_run(challenge: str, initial_solution: str, timebox_minutes: int,
-               total_levels: int) -> int:
+def create_run(fmt: str, challenge: str, initial_solution: str, timebox_minutes: int,
+               total_stages: int) -> int:
     now = time.time()
     with _conn() as conn:
         number = conn.execute(
-            "SELECT COALESCE(MAX(number), 0) + 1 FROM runs WHERE challenge = ?", (challenge,)
+            "SELECT COALESCE(MAX(number), 0) + 1 FROM runs WHERE format = ? AND challenge = ?",
+            (fmt, challenge),
         ).fetchone()[0]
         cur = conn.execute(
-            "INSERT INTO runs (challenge, number, status, started_at, completed_level, "
-            "total_levels, timebox_minutes, initial_solution, solution) "
-            "VALUES (?, ?, 'in_progress', ?, 0, ?, ?, ?, ?)",
-            (challenge, number, now, total_levels, timebox_minutes,
+            "INSERT INTO runs (format, challenge, number, status, started_at, completed_stages, "
+            "total_stages, timebox_minutes, initial_solution, solution) "
+            "VALUES (?, ?, ?, 'in_progress', ?, 0, ?, ?, ?, ?)",
+            (fmt, challenge, number, now, total_stages, timebox_minutes,
              initial_solution, initial_solution),
         )
         return cur.lastrowid
@@ -104,18 +120,20 @@ def get_run(run_id: int) -> dict | None:
         return dict(row) if row is not None else None
 
 
-def list_runs(challenge: str, include_archived: bool = False) -> list[dict]:
+def list_runs(fmt: str, challenge: str, include_archived: bool = False) -> list[dict]:
     """Runs for a challenge, newest first. Excludes archived unless
     include_archived is set (which returns BOTH active and archived)."""
     with _conn() as conn:
         if include_archived:
             rows = conn.execute(
-                "SELECT * FROM runs WHERE challenge = ? ORDER BY id DESC", (challenge,)
+                "SELECT * FROM runs WHERE format = ? AND challenge = ? ORDER BY id DESC",
+                (fmt, challenge),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM runs WHERE challenge = ? AND archived = 0 ORDER BY id DESC",
-                (challenge,),
+                "SELECT * FROM runs WHERE format = ? AND challenge = ? AND archived = 0 "
+                "ORDER BY id DESC",
+                (fmt, challenge),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -132,12 +150,12 @@ def update_solution(run_id: int, code: str) -> None:
         conn.execute("UPDATE runs SET solution = ? WHERE id = ?", (code, run_id))
 
 
-def set_completed_level(run_id: int, level: int) -> None:
-    """Record the highest level passed in this run (monotonic)."""
+def set_completed_stages(run_id: int, stage: int) -> None:
+    """Record the highest stage passed in this run (monotonic)."""
     with _conn() as conn:
         conn.execute(
-            "UPDATE runs SET completed_level = MAX(completed_level, ?) WHERE id = ?",
-            (level, run_id),
+            "UPDATE runs SET completed_stages = MAX(completed_stages, ?) WHERE id = ?",
+            (stage, run_id),
         )
 
 
@@ -200,11 +218,11 @@ def elapsed_seconds(run: dict) -> int:
     return int(_active_spent(run))
 
 
-def summary(challenge: str) -> dict:
+def summary(fmt: str, challenge: str) -> dict:
     """Aggregate for the challenge list: attempt count, best progress, active run."""
-    runs = list_runs(challenge)
+    runs = list_runs(fmt, challenge)
     return {
         "attempts": len(runs),
-        "best_completed": max((r["completed_level"] for r in runs), default=0),
+        "best_completed": max((r["completed_stages"] for r in runs), default=0),
         "has_active": any(r["status"] == "in_progress" for r in runs),
     }

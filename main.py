@@ -1,32 +1,38 @@
 #!/usr/bin/env python3
-"""Local web IDE for ICA mock assessments (single user, runs on your machine).
+"""Local web IDE for coding assessments (single user, runs on your machine).
 
     python main.py          # serve at http://localhost:5000
 
+An assessment format (see src/formats/) owns what a challenge looks like and how
+an attempt is graded. This module owns routing, gating and persistence, and never
+learns the vocabulary of a format: it speaks stages, files and attempts.
+
 Routes:
-    /                                    challenge list (landing)
-    /<challenge>                         attempts list for a challenge
-    /<challenge>/run/<run_id>            the IDE for a specific attempt
-    /ui/<file>                           static frontend assets
-    /api/challenges                      challenges + attempt aggregates
-    /api/<challenge>/runs                GET list attempts (newest first) / POST start one
-    /api/<challenge>/run/<run_id>/...    per-attempt API (state, level, file, autosave, run)
+    /                                     format list (landing)
+    /<format>                             challenge list for a format
+    /<format>/<challenge>                 attempts list for a challenge
+    /<format>/<challenge>/run/<run_id>    the IDE for a specific attempt
+    /ui/<file>                            static frontend assets
+    /api/formats                          formats + challenge counts
+    /api/<format>/challenges              challenges + attempt aggregates
+    /api/<format>/<challenge>/runs        GET list attempts (newest first) / POST start one
+    /api/<format>/<challenge>/run/<run_id>/...
+                                          per-attempt API (state, stage, file, autosave, run)
 
 Each attempt (run) has its own timer, progress gating and solution snapshot.
-Finished/expired runs are read-only (enforced server-side). Hidden test sources
-and the solution template are never served.
+Finished runs are read-only (enforced server-side). Files a format does not
+expose — hidden tests, starter templates — are never served.
 """
 
 import os
-import re
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 
+import formats
 import runner_core as core
 import runs
 
@@ -37,22 +43,34 @@ PORT = int(os.environ.get("ICA_PORT", "5000"))
 app = Flask(__name__, static_folder=None)
 
 
-def _require(challenge: str) -> None:
-    if not core.is_challenge(challenge):
+def _require_format(fmt: str):
+    """The format module for this URL segment, or 404."""
+    module = formats.get(fmt)
+    if module is None:
         abort(404)
+    return module
 
 
-def _require_run(challenge: str, run_id: int) -> dict:
-    _require(challenge)
+def _require_challenge(fmt: str, challenge: str):
+    """(format module, challenge dir) for an existing challenge, or 404."""
+    module = _require_format(fmt)
+    if not core.is_challenge(fmt, challenge):
+        abort(404)
+    return module, core.challenge_dir(fmt, challenge)
+
+
+def _require_run(fmt: str, challenge: str, run_id: int):
+    """(format module, challenge dir, run) for a run of THIS challenge, or 404."""
+    module, cdir = _require_challenge(fmt, challenge)
     run = runs.get_run(run_id)
-    if run is None or run["challenge"] != challenge:
+    if run is None or run["format"] != fmt or run["challenge"] != challenge:
         abort(404)
-    return run
+    return module, cdir, run
 
 
-def unlocked_levels_for_run(run: dict) -> list[int]:
-    """Levels visible in this run: 1..(completed + 1), if authored."""
-    return [n for n in core.available_levels(run["challenge"]) if n <= run["completed_level"] + 1]
+def unlocked_stages_for_run(module, cdir: Path, run: dict) -> list[int]:
+    """Stages visible in this run: 1..(completed + 1), if authored."""
+    return [n for n in module.stages(cdir) if n <= run["completed_stages"] + 1]
 
 
 def _run_summary(run: dict) -> dict:
@@ -65,8 +83,8 @@ def _run_summary(run: dict) -> dict:
         "started_at": run["started_at"],
         "ended_at": run["ended_at"],
         "duration_seconds": run["duration_seconds"],
-        "completed_level": run["completed_level"],
-        "total_levels": run["total_levels"],
+        "completed_stages": run["completed_stages"],
+        "total_stages": run["total_stages"],
         "remaining_seconds": runs.remaining_seconds(run),
     }
 
@@ -75,7 +93,7 @@ def _run_summary(run: dict) -> dict:
 
 @app.get("/")
 def home():
-    return send_from_directory(UI_DIR, "challenges.html")
+    return send_from_directory(UI_DIR, "formats.html")
 
 
 @app.get("/ui/<path:filename>")
@@ -83,90 +101,120 @@ def static_files(filename: str):
     return send_from_directory(UI_DIR, filename)
 
 
-@app.get("/<challenge>")
-def attempts_page(challenge: str):
-    _require(challenge)
+@app.get("/<fmt>")
+def challenges_page(fmt: str):
+    _require_format(fmt)
+    return send_from_directory(UI_DIR, "challenges.html")
+
+
+@app.get("/<fmt>/<challenge>")
+def attempts_page(fmt: str, challenge: str):
+    _require_challenge(fmt, challenge)
     return send_from_directory(UI_DIR, "attempts.html")
 
 
-@app.get("/<challenge>/run/<int:run_id>")
-def ide(challenge: str, run_id: int):
-    _require_run(challenge, run_id)
+@app.get("/<fmt>/<challenge>/run/<int:run_id>")
+def ide(fmt: str, challenge: str, run_id: int):
+    _require_run(fmt, challenge, run_id)
     return send_from_directory(UI_DIR, "index.html")
 
 
-# ----- API: challenges + attempts -----
+# ----- API: formats + challenges + attempts -----
 
-@app.get("/api/challenges")
-def challenges():
+@app.get("/api/formats")
+def formats_list():
     out = []
-    for c in core.list_challenges():
-        out.append({**c, **runs.summary(c["id"])})
+    for info in formats.infos():
+        challenges = core.list_challenges(info["id"])
+        attempts = sum(runs.summary(info["id"], c["id"])["attempts"] for c in challenges)
+        out.append({**info, "challenges": len(challenges), "attempts": attempts})
     return jsonify(out)
 
 
-@app.get("/api/<challenge>/runs")
-def list_runs(challenge: str):
-    _require(challenge)
-    meta = core.read_challenge_meta(challenge)
+@app.get("/api/<fmt>/challenges")
+def challenges(fmt: str):
+    module = _require_format(fmt)
+    out = []
+    for c in core.list_challenges(fmt):
+        cdir = core.challenge_dir(fmt, c["id"])
+        out.append(
+            {
+                **c,
+                "stages": len(module.stages(cdir)),
+                "stage_label": module.STAGE_LABEL,
+                **runs.summary(fmt, c["id"]),
+            }
+        )
+    return jsonify({"format": {"id": fmt, "title": module.TITLE}, "challenges": out})
+
+
+@app.get("/api/<fmt>/<challenge>/runs")
+def list_runs(fmt: str, challenge: str):
+    module, cdir = _require_challenge(fmt, challenge)
+    meta = core.read_challenge_meta(fmt, challenge)
     include_archived = request.args.get("all") in ("1", "true")
     return jsonify(
         {
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
-            "total_levels": len(core.available_levels(challenge)),
+            "total_stages": len(module.stages(cdir)),
+            "stage_label": module.STAGE_LABEL,
             "include_archived": include_archived,
-            "runs": [_run_summary(r) for r in runs.list_runs(challenge, include_archived)],
+            "runs": [
+                _run_summary(r) for r in runs.list_runs(fmt, challenge, include_archived)
+            ],
         }
     )
 
 
-@app.post("/api/<challenge>/run/<int:run_id>/archive")
-def archive_run(challenge: str, run_id: int):
-    _require_run(challenge, run_id)
+@app.post("/api/<fmt>/<challenge>/run/<int:run_id>/archive")
+def archive_run(fmt: str, challenge: str, run_id: int):
+    _require_run(fmt, challenge, run_id)
     runs.set_archived(run_id, True)
     return jsonify({"ok": True})
 
 
-@app.post("/api/<challenge>/run/<int:run_id>/unarchive")
-def unarchive_run(challenge: str, run_id: int):
-    _require_run(challenge, run_id)
+@app.post("/api/<fmt>/<challenge>/run/<int:run_id>/unarchive")
+def unarchive_run(fmt: str, challenge: str, run_id: int):
+    _require_run(fmt, challenge, run_id)
     runs.set_archived(run_id, False)
     return jsonify({"ok": True})
 
 
-@app.post("/api/<challenge>/runs")
-def start_run(challenge: str):
-    _require(challenge)
-    meta = core.read_challenge_meta(challenge)
-    total = len(core.available_levels(challenge))
-    code = core.create_solution_from_template(challenge)
-    run_id = runs.create_run(challenge, code, int(meta.get("timebox_minutes", 60)), total)
+@app.post("/api/<fmt>/<challenge>/runs")
+def start_run(fmt: str, challenge: str):
+    module, cdir = _require_challenge(fmt, challenge)
+    meta = core.read_challenge_meta(fmt, challenge)
+    run_id = runs.create_run(
+        fmt,
+        challenge,
+        module.new_solution(cdir),
+        int(meta.get("timebox_minutes", 60)),
+        len(module.stages(cdir)),
+    )
     return jsonify({"run_id": run_id})
 
 
 # ----- API: per-run -----
 
-@app.get("/api/<challenge>/run/<int:run_id>/state")
-def state(challenge: str, run_id: int):
-    run = _require_run(challenge, run_id)
-    meta = core.read_challenge_meta(challenge)
-    levels = unlocked_levels_for_run(run)
-    # For an active run, make solution.py on disk match this run before tests.
-    if run["status"] == "in_progress":
-        core.write_solution(challenge, run["solution"])
+@app.get("/api/<fmt>/<challenge>/run/<int:run_id>/state")
+def state(fmt: str, challenge: str, run_id: int):
+    module, cdir, run = _require_run(fmt, challenge, run_id)
+    meta = core.read_challenge_meta(fmt, challenge)
+    stages = unlocked_stages_for_run(module, cdir, run)
     return jsonify(
         {
+            "format": fmt,
             "challenge": challenge,
             "run_id": run_id,
             "number": run["number"],
             "status": run["status"],
             "read_only": run["status"] != "in_progress",
-            "levels": levels,
-            "current": levels[-1] if levels else None,
-            "completed": run["completed_level"],
-            "authored": core.available_levels(challenge),
-            "total_levels": run["total_levels"],
+            "stages": stages,
+            "stage_label": module.STAGE_LABEL,
+            "current": stages[-1] if stages else None,
+            "completed": run["completed_stages"],
+            "total_stages": run["total_stages"],
             "solution": run["solution"],
             "title": meta.get("title"),
             "timebox_minutes": meta.get("timebox_minutes"),
@@ -181,33 +229,27 @@ def state(challenge: str, run_id: int):
     )
 
 
-@app.get("/api/<challenge>/run/<int:run_id>/level/<int:n>")
-def level(challenge: str, run_id: int, n: int):
-    run = _require_run(challenge, run_id)
-    if n not in unlocked_levels_for_run(run):
+@app.get("/api/<fmt>/<challenge>/run/<int:run_id>/stage/<int:n>")
+def stage(fmt: str, challenge: str, run_id: int, n: int):
+    module, cdir, run = _require_run(fmt, challenge, run_id)
+    if n not in unlocked_stages_for_run(module, cdir, run):
         return jsonify({"error": "locked"}), 404
-    return jsonify(
-        {
-            "level": n,
-            "readme_md": core.read_readme(challenge, n),
-            "public_test_src": core.read_public_source(challenge, n),
-        }
-    )
+    return jsonify({"stage": n, "doc_md": module.stage_doc(cdir, n)})
 
 
-@app.get("/api/<challenge>/run/<int:run_id>/files")
-def files(challenge: str, run_id: int):
-    run = _require_run(challenge, run_id)
-    return jsonify(core.list_files(challenge, unlocked_levels_for_run(run)))
+@app.get("/api/<fmt>/<challenge>/run/<int:run_id>/files")
+def files(fmt: str, challenge: str, run_id: int):
+    module, cdir, run = _require_run(fmt, challenge, run_id)
+    return jsonify(module.files(cdir, unlocked_stages_for_run(module, cdir, run)))
 
 
-@app.get("/api/<challenge>/run/<int:run_id>/file/<file_id>")
-def file(challenge: str, run_id: int, file_id: str):
-    run = _require_run(challenge, run_id)
-    m = re.fullmatch(r"public-(\d+)", file_id)
-    if m and int(m.group(1)) not in unlocked_levels_for_run(run):
+@app.get("/api/<fmt>/<challenge>/run/<int:run_id>/file/<file_id>")
+def file(fmt: str, challenge: str, run_id: int, file_id: str):
+    module, cdir, run = _require_run(fmt, challenge, run_id)
+    gated_by = module.stage_of_file(file_id)
+    if gated_by is not None and gated_by not in unlocked_stages_for_run(module, cdir, run):
         return jsonify({"error": "locked"}), 404
-    content = core.read_file(challenge, file_id)
+    content = module.read_file(cdir, file_id)
     if content is None:
         return jsonify({"error": "not found"}), 404
     return jsonify({"id": file_id, "content": content})
@@ -221,10 +263,10 @@ def _reject_if_not_active(run: dict):
     return None
 
 
-@app.post("/api/<challenge>/run/<int:run_id>/resume")
-def resume_run(challenge: str, run_id: int):
+@app.post("/api/<fmt>/<challenge>/run/<int:run_id>/resume")
+def resume_run(fmt: str, challenge: str, run_id: int):
     """Start the clock for this attempt (opening/returning to its IDE)."""
-    run = _require_run(challenge, run_id)
+    _, _, run = _require_run(fmt, challenge, run_id)
     if run["status"] == "in_progress":
         runs.resume(run_id)
         run = runs.get_run(run_id)
@@ -237,62 +279,58 @@ def resume_run(challenge: str, run_id: int):
     )
 
 
-@app.post("/api/<challenge>/run/<int:run_id>/pause")
-def pause_run(challenge: str, run_id: int):
+@app.post("/api/<fmt>/<challenge>/run/<int:run_id>/pause")
+def pause_run(fmt: str, challenge: str, run_id: int):
     """Stop the clock for this attempt (leaving/hiding it)."""
-    run = _require_run(challenge, run_id)
+    _, _, run = _require_run(fmt, challenge, run_id)
     if run["status"] == "in_progress":
         runs.pause(run_id)
     return jsonify({"ok": True})
 
 
-@app.post("/api/<challenge>/run/<int:run_id>/autosave")
-def autosave(challenge: str, run_id: int):
-    run = _require_run(challenge, run_id)
+@app.post("/api/<fmt>/<challenge>/run/<int:run_id>/autosave")
+def autosave(fmt: str, challenge: str, run_id: int):
+    _, _, run = _require_run(fmt, challenge, run_id)
     rejection = _reject_if_not_active(run)
     if rejection:
         return rejection
-    code = request.get_json(force=True).get("code", "")
-    runs.update_solution(run_id, code)
-    core.write_solution(challenge, code)  # keep disk == DB for the active run
+    runs.update_solution(run_id, request.get_json(force=True).get("code", ""))
     return jsonify({"ok": True, "remaining_seconds": runs.remaining_seconds(run)})
 
 
-@app.post("/api/<challenge>/run/<int:run_id>/run")
-def run_tests(challenge: str, run_id: int):
-    run = _require_run(challenge, run_id)
+@app.post("/api/<fmt>/<challenge>/run/<int:run_id>/run")
+def run_tests(fmt: str, challenge: str, run_id: int):
+    module, cdir, run = _require_run(fmt, challenge, run_id)
     rejection = _reject_if_not_active(run)
     if rejection:
         return rejection
 
     data = request.get_json(force=True)
-    target = int(data.get("level", 1))
-    if target not in unlocked_levels_for_run(run):
-        return jsonify({"error": "level locked"}), 400
+    target = int(data.get("stage", 1))
+    if target not in unlocked_stages_for_run(module, cdir, run):
+        return jsonify({"error": "stage locked"}), 400
     if "code" in data:
         runs.update_solution(run_id, data["code"])
-        core.write_solution(challenge, data["code"])
+        run = runs.get_run(run_id)
 
-    unlocked_before = set(unlocked_levels_for_run(run))
-    public = core.run_public(challenge, target)
-    hidden = core.run_hidden(challenge, target)
-
-    # Both public and hidden tests (levels 1..target) must pass to advance.
-    if public["passed"] and hidden["passed"]:
-        runs.set_completed_level(run_id, target)
+    unlocked_before = set(unlocked_stages_for_run(module, cdir, run))
+    # The run's snapshot is the source of truth for its code; the format puts it
+    # on disk and decides whether this stage passes.
+    result = module.run_stage(cdir, target, run["solution"])
+    if result["passed"]:
+        runs.set_completed_stages(run_id, target)
 
     run = runs.get_run(run_id)
-    if run["completed_level"] >= run["total_levels"]:
+    if run["completed_stages"] >= run["total_stages"]:
         runs.mark_completed(run_id)
         run = runs.get_run(run_id)
 
-    unlocked = unlocked_levels_for_run(run)
+    unlocked = unlocked_stages_for_run(module, cdir, run)
     newly = sorted(set(unlocked) - unlocked_before)
     return jsonify(
         {
-            "public": public,
-            "hidden": hidden,
-            "completed": run["completed_level"],
+            **result,
+            "completed": run["completed_stages"],
             "unlocked": unlocked,
             "unlocked_now": newly[-1] if newly else None,
             "challenge_complete": run["status"] == "completed",
@@ -306,5 +344,5 @@ def run_tests(challenge: str, run_id: int):
 
 
 if __name__ == "__main__":
-    print(f"ICA IDE at http://{HOST}:{PORT}  (Ctrl+C to quit)")
+    print(f"Assessment IDE at http://{HOST}:{PORT}  (Ctrl+C to quit)")
     app.run(host=HOST, port=PORT, threaded=True)

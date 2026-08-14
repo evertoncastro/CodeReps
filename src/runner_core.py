@@ -1,22 +1,19 @@
-"""Shared execution core for the ICA mock assessment.
+"""Format-agnostic core: challenge discovery and test execution.
 
-The web service (run.py) imports this module to run tests against the files on
-disk.
-
-The challenges/ directory is a library of challenges, one folder each:
+The challenges/ directory is partitioned by assessment format; a challenge is a
+folder holding a challenge.json, and its name is both the challenge id and the
+last URL segment:
 
     challenges/
-        progress.db                       progress + timer state (gitignored)
-        warehouse_inventory/              one challenge
-            challenge.json                {"title", "timebox_minutes"}
-            solution.py                   evolving solution (the candidate edits)
-            level_N.md                    requirements for level N
-            level_N_public_tests.py       public tests (gate)
-            level_N_hidden_tests.py       hidden tests (feedback)
+        progress.db                       attempts + timer state (gitignored)
+        ica/                              one assessment format
+            warehouse_inventory/          one challenge
+                challenge.json            {"title", "timebox_minutes"}
+                ...                       whatever else the format defines
 
-Test modules are plain top-level modules (no packages); they import the
-candidate's code via `from solution import ...` and run with cwd set to the
-challenge folder so `solution` and the module names resolve.
+What lives inside a challenge folder is the format's business (see
+src/formats/), not this module's. Here we only find challenges, read their
+metadata, and run test modules in a subprocess.
 """
 
 import json
@@ -32,26 +29,28 @@ LIBRARY = ROOT / "challenges"
 HARNESS = SRC_DIR / "test_harness.py"
 TIMEOUT = int(os.environ.get("ICA_TEST_TIMEOUT", "30"))
 
-_PUBLIC_FILE_RE = re.compile(r"^level_(\d+)_public_tests\.py$")
-_TEST_NAME_RE = re.compile(r"^level_(\d+)_")
 _CID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def challenge_dir(challenge: str) -> Path:
-    return LIBRARY / challenge
+def format_dir(fmt: str) -> Path:
+    return LIBRARY / fmt
 
 
-def is_challenge(challenge: str) -> bool:
+def challenge_dir(fmt: str, challenge: str) -> Path:
+    return LIBRARY / fmt / challenge
+
+
+def is_challenge(fmt: str, challenge: str) -> bool:
     """Whether `challenge` is a valid, existing challenge id (no traversal)."""
-    if not challenge or not _CID_RE.match(challenge):
+    if not challenge or not _CID_RE.match(challenge) or not _CID_RE.match(fmt or ""):
         return False
-    return (challenge_dir(challenge) / "challenge.json").exists()
+    return (challenge_dir(fmt, challenge) / "challenge.json").exists()
 
 
-def read_challenge_meta(challenge: str) -> dict:
+def read_challenge_meta(fmt: str, challenge: str) -> dict:
     """Challenge metadata (title, timebox). Falls back to sensible defaults."""
     meta = {"title": challenge, "timebox_minutes": 60}
-    f = challenge_dir(challenge) / "challenge.json"
+    f = challenge_dir(fmt, challenge) / "challenge.json"
     if f.exists():
         try:
             meta.update(json.loads(f.read_text()))
@@ -60,123 +59,32 @@ def read_challenge_meta(challenge: str) -> dict:
     return meta
 
 
-def list_challenges() -> list[dict]:
-    """All challenges in the library, sorted by id."""
+def list_challenges(fmt: str) -> list[dict]:
+    """All challenges of one format, sorted by id (stage counts come from the format)."""
     out = []
-    if not LIBRARY.is_dir():
+    fdir = format_dir(fmt)
+    if not fdir.is_dir():
         return out
-    for d in sorted(LIBRARY.iterdir()):
+    for d in sorted(fdir.iterdir()):
         if d.is_dir() and (d / "challenge.json").exists():
-            meta = read_challenge_meta(d.name)
+            meta = read_challenge_meta(fmt, d.name)
             out.append(
                 {
                     "id": d.name,
                     "title": meta.get("title"),
                     "timebox_minutes": meta.get("timebox_minutes"),
-                    "levels": len(available_levels(d.name)),
                 }
             )
     return out
 
 
-def available_levels(challenge: str) -> list[int]:
-    cdir = challenge_dir(challenge)
-    if not cdir.is_dir():
-        return []
-    levels = []
-    for p in cdir.glob("level_*_public_tests.py"):
-        m = _PUBLIC_FILE_RE.match(p.name)
-        if m:
-            levels.append(int(m.group(1)))
-    return sorted(levels)
+def run_modules(cdir: Path, modules: list[str]) -> dict:
+    """Run unittest modules in `cdir` via the harness; return {passed, tests:[...]}.
 
-
-def level_of(test_name: str) -> int | None:
-    m = _TEST_NAME_RE.match(test_name)
-    return int(m.group(1)) if m else None
-
-
-def solution_path(challenge: str) -> Path:
-    return challenge_dir(challenge) / "solution.py"
-
-
-def read_solution(challenge: str) -> str:
-    p = solution_path(challenge)
-    return p.read_text() if p.exists() else ""
-
-
-def write_solution(challenge: str, code: str) -> None:
-    challenge_dir(challenge).mkdir(parents=True, exist_ok=True)
-    solution_path(challenge).write_text(code)
-
-
-def template_path(challenge: str) -> Path:
-    return challenge_dir(challenge) / "solution_template.py"
-
-
-def read_template(challenge: str) -> str:
-    """Starter code for a fresh attempt. Never exposed to the candidate."""
-    p = template_path(challenge)
-    return p.read_text() if p.exists() else ""
-
-
-def create_solution_from_template(challenge: str) -> str:
-    """Materialize a fresh solution.py from the template and return its content."""
-    code = read_template(challenge)
-    write_solution(challenge, code)
-    return code
-
-
-def read_readme(challenge: str, level: int) -> str:
-    f = challenge_dir(challenge) / f"level_{level}.md"
-    return f.read_text() if f.exists() else ""
-
-
-def read_public_source(challenge: str, level: int) -> str:
-    f = challenge_dir(challenge) / f"level_{level}_public_tests.py"
-    return f.read_text() if f.exists() else ""
-
-
-def list_files(challenge: str, levels: list[int] | None = None) -> list[dict]:
-    """Files exposed in the UI explorer.
-
-    Only solution.py (editable) and each level's public tests (read-only) are
-    listed. Hidden test sources are NEVER exposed. Pass `levels` to restrict to
-    the currently unlocked levels (defaults to all authored levels).
-    """
-    if levels is None:
-        levels = available_levels(challenge)
-    files = [{"id": "solution", "label": "solution.py", "editable": True}]
-    for n in levels:
-        if (challenge_dir(challenge) / f"level_{n}_public_tests.py").exists():
-            files.append(
-                {"id": f"public-{n}", "label": f"level_{n}_public_tests.py", "editable": False}
-            )
-    return files
-
-
-def _resolve_file(challenge: str, file_id: str) -> Path | None:
-    """Map a whitelisted file id to a path. Returns None for anything else."""
-    if file_id == "solution":
-        return solution_path(challenge)
-    m = re.fullmatch(r"public-(\d+)", file_id or "")
-    if m:
-        return challenge_dir(challenge) / f"level_{m.group(1)}_public_tests.py"
-    return None
-
-
-def read_file(challenge: str, file_id: str) -> str | None:
-    p = _resolve_file(challenge, file_id)
-    if p is None or not p.exists():
-        return None
-    return p.read_text()
-
-
-def _run_modules(challenge: str, modules: list[str]) -> dict:
-    """Run unittest modules via the harness; return {passed, tests:[...]}."""
+    Format-agnostic: the caller decides which module names to run. Each test
+    gets its own time budget inside the harness (ICA_CASE_TIMEOUT)."""
     if not modules:
         return {"passed": False, "tests": []}
-    cdir = challenge_dir(challenge)
     env = dict(os.environ)
     env["PYTHONPATH"] = str(cdir) + os.pathsep + env.get("PYTHONPATH", "")
     try:
@@ -202,32 +110,3 @@ def _run_modules(challenge: str, modules: list[str]) -> dict:
             "tests": [{"name": "harness", "status": "error",
                        "message": (proc.stdout + proc.stderr).strip()}],
         }
-
-
-def run_public(challenge: str, target: int) -> dict:
-    """Run public tests for levels 1..target (regression). Gate = all pass."""
-    modules = [f"level_{lvl}_public_tests" for lvl in range(1, target + 1)]
-    result = _run_modules(challenge, modules)
-    for t in result["tests"]:
-        t["level"] = level_of(t["name"])
-        t["short"] = t["name"].rsplit(".", 1)[-1]
-    return result
-
-
-def run_hidden(challenge: str, target: int) -> dict:
-    """Run hidden tests for levels 1..target (regression). Gate = all pass."""
-    cdir = challenge_dir(challenge)
-    modules = [
-        f"level_{lvl}_hidden_tests"
-        for lvl in range(1, target + 1)
-        if (cdir / f"level_{lvl}_hidden_tests.py").exists()
-    ]
-    if not modules:
-        return {"passed": True, "tests": [], "passed_count": 0, "total": 0}
-    result = _run_modules(challenge, modules)
-    for t in result["tests"]:
-        t["level"] = level_of(t["name"])
-        t["short"] = t["name"].rsplit(".", 1)[-1]
-    result["passed_count"] = sum(1 for t in result["tests"] if t["status"] == "ok")
-    result["total"] = len(result["tests"])
-    return result

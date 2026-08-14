@@ -1,7 +1,8 @@
 "use strict";
 
-// The attempts page URL is /<challenge>.
-const CID = location.pathname.replace(/^\/+|\/+$/g, "");
+// The attempts page URL is /<format>/<challenge>.
+const [FORMAT, CID] = location.pathname.replace(/^\/+|\/+$/g, "").split("/");
+const API = `/api/${FORMAT}/${CID}`;
 let showArchived = false;
 
 function fmtDur(s) {
@@ -22,15 +23,15 @@ function timeInfo(r) {
 }
 
 async function newAttempt() {
-  const res = await fetch(`/api/${CID}/runs`, { method: "POST" });
+  const res = await fetch(`${API}/runs`, { method: "POST" });
   const d = await res.json();
-  if (d.run_id) location.href = `/${CID}/run/${d.run_id}`;
+  if (d.run_id) location.href = `/${FORMAT}/${CID}/run/${d.run_id}`;
 }
 
 async function setArchived(id, archived, number) {
   const verb = archived ? "Archive" : "Unarchive";
   if (!confirm(`${verb} attempt #${number}?`)) return;
-  await fetch(`/api/${CID}/run/${id}/${archived ? "archive" : "unarchive"}`, { method: "POST" });
+  await fetch(`${API}/run/${id}/${archived ? "archive" : "unarchive"}`, { method: "POST" });
   load();
 }
 
@@ -40,13 +41,14 @@ function toggleArchived() {
 }
 
 async function load() {
+  document.querySelector(".brand").setAttribute("href", `/${FORMAT}`);
   document.getElementById("btn-new").onclick = newAttempt;
   const toggle = document.getElementById("btn-toggle");
   toggle.onclick = toggleArchived;
   toggle.textContent = showArchived ? "Hide archived" : "Show archived";
   toggle.classList.toggle("active", showArchived);
 
-  const res = await fetch(`/api/${CID}/runs${showArchived ? "?all=1" : ""}`);
+  const res = await fetch(`${API}/runs${showArchived ? "?all=1" : ""}`);
   const data = await res.json();
 
   if (data.title) {
@@ -62,10 +64,11 @@ async function load() {
   }
 
   const labels = { in_progress: "In progress", completed: "Completed", expired: "Expired" };
+  const stageLabel = (data.stage_label || "Stage").toLowerCase();
   data.runs.forEach((r) => {
     const card = document.createElement("a");
     card.className = "challenge-card attempt-card" + (r.archived ? " archived" : "");
-    card.href = `/${CID}/run/${r.id}`;
+    card.href = `/${FORMAT}/${CID}/run/${r.id}`;
     const action = r.status === "in_progress" ? "Continue" : "View";
     card.innerHTML =
       `<h2>Attempt #${r.number} ` +
@@ -74,7 +77,7 @@ async function load() {
       `</h2>` +
       `<div class="meta">` +
       `<span>started: ${fmtDate(r.started_at)}</span>` +
-      `<span>levels: ${r.completed_level}/${r.total_levels}</span>` +
+      `<span>${stageLabel}s: ${r.completed_stages}/${r.total_stages}</span>` +
       `<span>${timeInfo(r)}</span>` +
       `<span class="status">${action} →</span>` +
       `</div>`;

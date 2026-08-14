@@ -1,8 +1,9 @@
 # AGENTS.md
 
-Local, single-user web IDE for practising ICA-style coding assessments (4 progressive
-levels, timer, public + hidden tests). See `README.md` for user-facing setup and
-`COMPONENTS.md` for diagrams of how the pieces fit together.
+Local, single-user web IDE for practising coding assessments. An assessment **format**
+(see `src/formats/`) owns what a challenge looks like and how it is graded; ICA — four
+progressive levels against one evolving `solution.py` — is currently the only one. See
+`README.md` for user-facing setup and `COMPONENTS.md` for diagrams.
 
 **This file is the single source of truth for every coding agent.** `CLAUDE.md`,
 `GEMINI.md` and `.github/copilot-instructions.md` are pointers to it — put instructions
@@ -27,18 +28,28 @@ Python 3.10+ (3.12 in `.venv`), Flask as the only third-party dependency, stdlib
 ## Layout
 
 ```
-main.py                 Flask app: routes, API, auth-free single-user server
-src/runner_core.py      challenge discovery, whitelisted file access, test execution
-src/test_harness.py     subprocess: runs unittest modules -> JSON on stdout
-src/runs.py             attempt persistence (timer, progress, code snapshot)
-src/progress.py         legacy per-challenge progress table; superseded by runs.py
-ui/                     challenges.html/js, attempts.html/js, index.html+app.js, style.css
-challenges/<id>/        one challenge; folder name is the id AND the URL route
-prompt.md               authoring spec for challenges (pt-BR)
-.agents/skills/         canonical playbooks (see Playbooks above)
+main.py                    Flask app: routing, gating, persistence. Format-agnostic.
+src/runner_core.py         challenge discovery + run_modules() subprocess. Format-agnostic.
+src/test_harness.py        subprocess: runs unittest modules -> JSON on stdout
+src/runs.py                attempt persistence (timer, progress, code snapshot)
+src/formats/__init__.py    format registry + the contract every format implements
+src/formats/ica.py         ALL ICA specifics: levels, public/hidden pairs, solution.py
+ui/                        formats/challenges/attempts pages + index.html+app.js (the IDE)
+challenges/<format>/<id>/  one challenge; both names are URL segments
+prompt.md                  authoring spec for ICA challenges (pt-BR)
+.agents/skills/            canonical playbooks (see Playbooks above)
 ```
 
-A challenge folder holds `challenge.json` (`title`, `timebox_minutes`),
+The core speaks **stages** — a stage is whatever unit of work a format defines (a level
+for ICA). It never learns a format's vocabulary: the format exports `STAGE_LABEL`
+("Level") and the UI renders that.
+
+**Adding a format**: write `src/formats/<id>.py` implementing the contract documented in
+`src/formats/__init__.py`, add its id to `_CANDIDATES` there, and drop challenge folders
+under `challenges/<id>/`. Nothing else — challenges are discovered by their
+`challenge.json`, and every route already carries the format segment.
+
+An ICA challenge folder holds `challenge.json` (`title`, `timebox_minutes`),
 `solution_template.py`, `solution.py`, and per level `level_N.md`,
 `level_N_public_tests.py`, `level_N_hidden_tests.py`. Levels are discovered by
 globbing `level_*_public_tests.py` — there is no registry to update.
@@ -54,11 +65,15 @@ There is no test suite for the app itself. To verify a change, exercise the API
 directly, e.g.:
 
 ```bash
-curl -s localhost:5000/api/challenges
-curl -s -XPOST localhost:5000/api/warehouse_inventory/runs
-curl -s -XPOST localhost:5000/api/warehouse_inventory/run/1/run \
-     -H 'content-type: application/json' -d '{"level":1}'
+curl -s localhost:5000/api/formats
+curl -s localhost:5000/api/ica/challenges
+curl -s -XPOST localhost:5000/api/ica/warehouse_inventory/runs
+curl -s -XPOST localhost:5000/api/ica/warehouse_inventory/run/1/run \
+     -H 'content-type: application/json' -d '{"stage":1}'
 ```
+
+Use a spare port too (`ICA_PORT=5001`) so a server the user already has open on 5000
+does not answer — and swallow your writes — instead of yours.
 
 Set `ICA_DB=/tmp/x.db` to avoid touching real attempt history. Other env vars:
 `ICA_HOST`, `ICA_PORT`, `ICA_TEST_TIMEOUT` (whole run, 30s), `ICA_CASE_TIMEOUT`
@@ -67,26 +82,28 @@ Set `ICA_DB=/tmp/x.db` to avoid touching real attempt history. Other env vars:
 To run a challenge's tests without the server:
 
 ```bash
-cd challenges/<id> && PYTHONPATH=. python ../../src/test_harness.py level_1_public_tests
+cd challenges/ica/<id> && PYTHONPATH=. python ../../../src/test_harness.py level_1_public_tests
 ```
 
 ## Invariants — do not break these
 
-- **Hidden test sources are never served.** `runner_core.list_files` / `_resolve_file`
-  whitelist only `solution` and `public-<n>`; `solution_template.py` is not exposed
-  either. Any new file-serving route must go through that whitelist.
-- **Levels are gated server-side.** Requests for a locked level's statement, file or
-  test run must 404/400 (`unlocked_levels_for_run` in `main.py`). Never let the client
+- **A format's `read_file` is a whitelist.** ICA maps only `solution` and `public-<n>`;
+  hidden tests and `solution_template.py` are unaddressable. Any new file-serving path
+  must go through `module.read_file`, never build a path from client input.
+- **Stages are gated server-side.** Requests for a locked stage's statement, file or
+  test run must 404/400 (`unlocked_stages_for_run` in `main.py`). Never let the client
   decide what is unlocked.
 - **Finished attempts are read-only**, enforced in `main.py` (`_reject_if_not_active`).
   Being over the timebox does NOT lock a run — the timebox is a target, not a stop.
-- **A run's DB snapshot is the source of truth** for its code; `challenges/<id>/solution.py`
-  on disk is a scratch file synced from the active run right before tests execute.
-- **Passing level N requires all public AND hidden tests for levels 1..N.**
+- **A run's DB snapshot is the source of truth** for its code; the file the format
+  materializes on disk (for ICA, `challenges/ica/<id>/solution.py`) is scratch, written
+  only inside `run_stage` right before the tests execute.
+- **The gate is the format's call.** `run_stage` returns `passed`; `main.py` must not
+  reimplement it. For ICA that means all public AND hidden tests for stages 1..N.
 - **The harness contract**: `test_harness.py` prints exactly one JSON object on stdout.
   Anything else printed there corrupts the result — test/solution output is captured
   and attached per test as `output`.
-- `challenges/progress.db` and `challenges/*/solution.py` are gitignored; don't commit
+- `challenges/progress.db` and `challenges/*/*/solution.py` are gitignored; don't commit
   them or add generated state elsewhere.
 
 ## Conventions
@@ -94,13 +111,14 @@ cd challenges/<id> && PYTHONPATH=. python ../../src/test_harness.py level_1_publ
 - Stdlib-only outside of Flask. Challenges must not use network, DBs or frameworks.
 - Module docstrings explain the *why*; keep them accurate when behaviour changes.
 - Backend: type hints on signatures, small functions, `abort(404)` for unknown
-  challenges/runs. `runs.py` migrates its own schema in `_conn()` (`ALTER TABLE` guarded
+  formats/challenges/runs. Format modules take `cdir` (the challenge directory) and
+  never learn how the library is laid out. `runs.py` migrates its own schema in `_conn()` (`ALTER TABLE` guarded
   by `PRAGMA table_info`) — extend that pattern instead of writing migration scripts.
 - Frontend: vanilla ES modules-free JS, no framework, no bundler. Match `app.js` style.
 
-## Authoring challenges
+## Authoring ICA challenges
 
-Follow `prompt.md`: 4 levels, one evolving `solution.py`, a public interface that only
+Follow `prompt.md` (challenges go under `challenges/ica/`): 4 levels, one evolving `solution.py`, a public interface that only
 ever extends (never rename or break an existing method), 5–10 public and 10–20 hidden
 tests per level, at least one large-input performance test at level 3/4 sized so an
 O(n)/O(n log n) solution passes comfortably and a quadratic one blows the case budget.

@@ -1,14 +1,14 @@
 # Components
 
-How the pieces of the ICA Mock Assessment fit together. See `README.md` for setup and
-`AGENTS.md` for working rules.
+How the pieces fit together. The core is format-agnostic; an assessment format (ICA
+today) plugs into it. See `README.md` for setup and `AGENTS.md` for working rules.
 
 ## System overview
 
 ```mermaid
 graph TB
     subgraph browser["Browser"]
-        pages["Pages<br/>challenges · attempts · IDE"]
+        pages["Pages<br/>formats · challenges · attempts · IDE"]
         appjs["app.js<br/>editor · timer · autosave · results"]
         cdn["Monaco · marked · Split.js<br/>(CDN)"]
         appjs -.->|"loads"| cdn
@@ -16,18 +16,19 @@ graph TB
 
     subgraph server["Flask server — main.py"]
         routes["Pages + static (/ui)"]
-        api["JSON API<br/>/api/challenges<br/>/api/&lt;challenge&gt;/runs<br/>/api/&lt;challenge&gt;/run/&lt;id&gt;/*"]
-        gate["Level gating<br/>read-only enforcement"]
+        api["JSON API<br/>/api/formats<br/>/api/&lt;format&gt;/challenges<br/>/api/&lt;format&gt;/&lt;challenge&gt;/run/&lt;id&gt;/*"]
+        gate["Stage gating<br/>read-only enforcement"]
     end
 
     subgraph core["src/"]
-        runner["runner_core.py<br/>discovery · file whitelist<br/>test execution"]
+        fmt["formats/ica.py<br/>stages · file whitelist<br/>grading"]
+        runner["runner_core.py<br/>discovery · subprocess runner"]
         runs["runs.py<br/>attempts: timer · progress<br/>code snapshot"]
         harness["test_harness.py<br/>unittest → JSON"]
     end
 
     subgraph storage["Storage"]
-        lib[("challenges/&lt;id&gt;/<br/>statements · tests · template")]
+        lib[("challenges/&lt;format&gt;/&lt;id&gt;/<br/>statements · tests · template")]
         db[("challenges/progress.db<br/>SQLite")]
     end
 
@@ -35,10 +36,11 @@ graph TB
     appjs -->|"HTTP"| routes
     appjs -->|"fetch"| api
     api --> gate
-    gate --> runner
+    gate --> fmt
     gate --> runs
+    fmt --> runner
     runner -->|"subprocess"| harness
-    runner -->|"read/write"| lib
+    fmt -->|"read/write"| lib
     harness -->|"imports solution.py"| lib
     runs -->|"read/write"| db
 ```
@@ -50,39 +52,44 @@ is given; it never decides access.
 
 | Component | Owns | Never does |
 |---|---|---|
-| `main.py` | Routing, gating, read-only enforcement, response shapes | Business logic of test running |
-| `runner_core.py` | Challenge discovery, whitelisted file reads, spawning tests | Persistence |
+| `main.py` | Routing, stage gating, read-only enforcement, response shapes | Anything format-specific — no filenames, no "level" |
+| `formats/ica.py` | Level layout, which files are visible, the pass/fail gate | Persistence, HTTP, knowing where the library lives |
+| `runner_core.py` | Format + challenge discovery, spawning the harness | Persistence, format vocabulary |
 | `runs.py` | Attempt rows: timer, progress, code snapshot, schema migration | Anything HTTP-aware |
 | `test_harness.py` | Isolated subprocess: per-case time budget, output capture, JSON | Touching the DB |
-| `ui/app.js` | Editor, tabs, timer display, autosave, result rendering | Deciding what is unlocked |
+| `ui/app.js` | Editor, tabs, timer display, autosave, result rendering | Deciding what is unlocked, or naming a stage itself |
 
-## Running the tests for a level
+## Running the tests for a stage
 
 ```mermaid
 sequenceDiagram
     participant U as Browser
     participant A as main.py
     participant R as runs.py
+    participant F as formats/ica.py
     participant C as runner_core.py
     participant H as test_harness.py
 
-    U->>A: POST /run {level, code}
-    A->>A: reject if finished or level locked
+    U->>A: POST /run {stage, code}
+    A->>A: reject if finished or stage locked
     A->>R: update_solution(run_id, code)
-    A->>C: write_solution() — sync disk with the run
-    A->>C: run_public(level) + run_hidden(level)
-    C->>H: subprocess, cwd=challenges/<id>
+    A->>F: run_stage(cdir, stage, code)
+    F->>F: materialize solution.py on disk
+    F->>C: run_modules(cdir, level_1..N public + hidden)
+    C->>H: subprocess, cwd=challenges/ica/<id>
     Note over H: each test case under<br/>ICA_CASE_TIMEOUT (SIGALRM)
     H-->>C: {"passed", "tests":[…]} on stdout
-    C-->>A: parsed results
-    alt public AND hidden pass for levels 1..N
-        A->>R: set_completed_level(N) → unlocks N+1
-        A->>R: mark_completed() if N was the last level
+    C-->>F: parsed results
+    F-->>A: {passed, public, hidden}
+    alt result.passed
+        A->>R: set_completed_stages(N) → unlocks N+1
+        A->>R: mark_completed() if N was the last stage
     end
-    A-->>U: results + unlocked levels + status
+    A-->>U: results + unlocked stages + status
 ```
 
-Hidden test **sources** never leave the server — only their pass/fail results do.
+`main.py` never inspects `public`/`hidden` — the format decides `passed` and the rest is
+passed through to the client. Hidden test **sources** never leave the server.
 
 ## Attempt lifecycle
 
@@ -95,7 +102,7 @@ stateDiagram-v2
         running --> paused: leave the IDE
         paused --> running: POST /resume
     }
-    in_progress --> completed: last level passes
+    in_progress --> completed: last stage passes
     completed --> [*]
 ```
 
@@ -107,27 +114,30 @@ and is simply flagged as over time. Completed attempts are read-only, enforced s
 
 ```mermaid
 graph LR
-    lib["challenges/"] --> c["&lt;challenge_id&gt;/<br/><i>folder name = id = route</i>"]
+    lib["challenges/"] --> f["&lt;format&gt;/<br/><i>ica</i>"]
+    f --> c["&lt;challenge_id&gt;/<br/><i>both names are URL segments</i>"]
     c --> meta["challenge.json<br/>title · timebox_minutes"]
-    c --> tpl["solution_template.py<br/>starter, never served"]
-    c --> sol["solution.py<br/>candidate's code (gitignored)"]
-    c --> lvl["level_N.md<br/>statement"]
-    c --> pub["level_N_public_tests.py<br/>shown read-only"]
-    c --> hid["level_N_hidden_tests.py<br/>results only"]
+    c --> rest["everything else is<br/>the format's business"]
+    rest --> tpl["solution_template.py<br/>starter, never served"]
+    rest --> sol["solution.py<br/>candidate's code (gitignored)"]
+    rest --> lvl["level_N.md<br/>statement"]
+    rest --> pub["level_N_public_tests.py<br/>shown read-only"]
+    rest --> hid["level_N_hidden_tests.py<br/>results only"]
 ```
 
-Levels are discovered by globbing `level_*_public_tests.py`, and a challenge registers
-itself simply by having a `challenge.json` — there is no list to maintain anywhere.
+Only `challenge.json` is a core requirement; the ICA layout below it is defined by
+`formats/ica.py`, which discovers levels by globbing `level_*_public_tests.py`. Adding a
+challenge means creating a folder — there is no list to maintain anywhere.
 
 ## Trust boundaries
 
 | Served to the browser | Never served |
 |---|---|
-| Statements of unlocked levels | Statements of locked levels |
+| Statements of unlocked stages | Statements of locked stages |
 | Public test sources | Hidden test sources |
 | Your `solution.py` | `solution_template.py` |
 | Hidden test *results* (names + status) | — |
 
-Enforced by a whitelist in `runner_core` (`solution` and `public-<n>` are the only
-addressable file ids) plus per-level checks in `main.py`. Candidate code runs in a
-subprocess with **no sandboxing** — keep the server on `127.0.0.1`.
+Enforced by the format's `read_file` whitelist (for ICA, `solution` and `public-<n>` are
+the only addressable file ids) plus per-stage checks in `main.py`. Candidate code runs in
+a subprocess with **no sandboxing** — keep the server on `127.0.0.1`.

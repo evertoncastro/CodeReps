@@ -46,21 +46,23 @@ Um Senior forte deve achar desafiador mas factível em ~70 min.
 
 ## Layout em disco
 
-`challenges/` é a biblioteca: cada desafio é uma pasta com nome próprio (que vira
-a rota, ex.: `/warehouse_inventory`), com arquivos planos (sem subdiretórios por
-nível):
+`challenges/` é a biblioteca, particionada por formato de assessment. ICA é um
+formato (`src/formats/ica.py`), então seus desafios ficam em `challenges/ica/`.
+Os dois nomes viram segmentos de URL (ex.: `/ica/warehouse_inventory`), com
+arquivos planos dentro do desafio (sem subdiretórios por nível):
 
 ```
 challenges/
   progress.db                  # estado (progresso + timer), gitignored
-  warehouse_inventory/         # um desafio (o nome da pasta é o id/rota)
-    challenge.json             # metadados: {"title", "timebox_minutes"} (ex.: 60)
-    solution.py                # a única solução, evolui nível a nível (o candidato edita)
-    level_1.md                 # requisitos do nível 1 (legível)
-    level_1_public_tests.py    # testes públicos do nível 1 (unittest, runnable)
-    level_1_hidden_tests.py    # testes ocultos do nível 1 (unittest, runnable)
-    level_2.md  level_2_public_tests.py  level_2_hidden_tests.py
-    ...  level_4_*             # criados só após o candidato passar o nível anterior
+  ica/                          # um formato
+    warehouse_inventory/        # um desafio (o nome da pasta é o id/rota)
+      challenge.json            # metadados: {"title", "timebox_minutes"} (ex.: 60)
+      solution.py               # a única solução, evolui nível a nível (o candidato edita)
+      level_1.md                # requisitos do nível 1 (legível)
+      level_1_public_tests.py   # testes públicos do nível 1 (unittest, runnable)
+      level_1_hidden_tests.py   # testes ocultos do nível 1 (unittest, runnable)
+      level_2.md  level_2_public_tests.py  level_2_hidden_tests.py
+      ...  level_4_*            # criados só após o candidato passar o nível anterior
 ```
 
 Os módulos de teste são módulos top-level (sem pacote/`__init__.py`), rodados com
@@ -71,7 +73,7 @@ métodos no `level_N.md` (o candidato estende o mesmo `solution.py`).
 ## Regras de teste (por nível)
 
 Gere módulos `unittest` REAIS e executáveis. O serviço (`main.py`) os roda com
-`cwd` na pasta do desafio (ex.: `challenges/warehouse_inventory/`), então cada
+`cwd` na pasta do desafio (ex.: `challenges/ica/warehouse_inventory/`), então cada
 teste deve começar com:
 
 ```python

@@ -114,11 +114,11 @@ a.brand:hover { color: #fff; }
   font-size: 14px;
 }
 
-#level-tabs {
+#stage-tabs {
   display: flex;
   gap: 6px;
 }
-#level-tabs button {
+#stage-tabs button {
   background: #333;
   color: var(--muted);
   border: 1px solid var(--border);
@@ -126,8 +126,8 @@ a.brand:hover { color: #fff; }
   border-radius: 4px;
   cursor: pointer;
 }
-#level-tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent); }
-#level-tabs button:hover { color: var(--text); }
+#stage-tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+#stage-tabs button:hover { color: var(--text); }
 
 #topbar button {
   background: #333;
@@ -263,3 +263,10 @@ a.brand:hover { color: #fff; }
 .summary { margin: 8px 0; font-weight: 600; }
 .summary.ok { color: var(--ok); }
 .summary.fail { color: var(--fail); }
+
+.format-description {
+  margin: 0 0 10px;
+  color: var(--muted, #9aa4b2);
+  font-size: 13px;
+  line-height: 1.45;
+}
