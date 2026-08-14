@@ -15,6 +15,7 @@ Task-specific instructions live under `.agents/skills/` and are read on demand, 
 cost nothing until they are needed. Read the whole file before starting the task.
 
 - **Authoring a new challenge** → `.agents/skills/create-challenge/SKILL.md`
+- **Refactoring** (ends with a docs pass) → `.agents/skills/refactor/SKILL.md`
 
 (`.claude/skills/` mirrors these as stubs so Claude Code autoloads them; the file under
 `.agents/skills/` is always the real one.)
