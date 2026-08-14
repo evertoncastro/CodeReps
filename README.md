@@ -76,6 +76,8 @@ ICA_PORT=8080 ICA_CASE_TIMEOUT=10 python main.py
 
 # Part 2 — How it works
 
+Diagrams of the same picture live in `COMPONENTS.md`.
+
 ## Layout
 
 ```

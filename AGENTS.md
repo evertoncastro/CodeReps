@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Local, single-user web IDE for practising ICA-style coding assessments (4 progressive
-levels, timer, public + hidden tests). See `README.md` for user-facing setup.
+levels, timer, public + hidden tests). See `README.md` for user-facing setup and
+`COMPONENTS.md` for diagrams of how the pieces fit together.
 
 **This file is the single source of truth for every coding agent.** `CLAUDE.md`,
 `GEMINI.md` and `.github/copilot-instructions.md` are pointers to it — put instructions
