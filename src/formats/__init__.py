@@ -39,7 +39,7 @@ library is laid out.
 # Ids that would collide with an existing route.
 RESERVED_IDS = {"ui", "api", "static", "favicon.ico"}
 
-_CANDIDATES = ("ica",)
+_CANDIDATES = ("ica", "python_gym")
 
 ALL: list = []
 UNAVAILABLE: dict[str, str] = {}
@@ -63,8 +63,32 @@ def get(format_id: str):
 
 
 def infos() -> list[dict]:
-    """Metadata for the home page, one entry per format."""
-    return [
-        {"id": m.ID, "title": m.TITLE, "description": m.DESCRIPTION, "stage_label": m.STAGE_LABEL}
+    """Metadata for the home page: every format, available or not.
+
+    A format whose dependencies are missing is still listed — as unavailable,
+    with the reason — because silently vanishing from the home page looks like a
+    bug in the app rather than a missing package.
+    """
+    out = [
+        {
+            "id": m.ID,
+            "title": m.TITLE,
+            "description": m.DESCRIPTION,
+            "stage_label": m.STAGE_LABEL,
+            "available": True,
+            "unavailable_reason": None,
+        }
         for m in ALL
     ]
+    out += [
+        {
+            "id": name.replace("_", "-"),
+            "title": name.replace("_", "-"),
+            "description": "",
+            "stage_label": "Stage",
+            "available": False,
+            "unavailable_reason": reason,
+        }
+        for name, reason in UNAVAILABLE.items()
+    ]
+    return out

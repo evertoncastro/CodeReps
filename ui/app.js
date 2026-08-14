@@ -10,6 +10,7 @@ const API = `/api/${FORMAT}/${CHALLENGE}/run/${RUN_ID}`;
 let editor = null;
 let currentStage = null;
 let stages = [];
+let totalStages = 0;
 let stageLabel = "Stage";
 let readOnly = false;
 
@@ -147,6 +148,7 @@ async function api(path, opts) {
 async function loadState() {
   const state = await api(`${API}/state`);
   stages = state.stages;
+  totalStages = state.total_stages || stages.length;
   currentStage = state.current;
   stageLabel = state.stage_label || "Stage";
   readOnly = state.read_only;
@@ -192,7 +194,9 @@ function renderPerformance(state) {
   const sum = document.createElement("div");
   sum.className = "summary " + (done ? "ok" : "fail");
   sum.textContent = done
-    ? `Completed all ${state.total_stages} ${stageLabel.toLowerCase()}s`
+    ? totalStages > 1
+      ? `Completed all ${state.total_stages} ${stageLabel.toLowerCase()}s`
+      : "Completed"
     : `Reached ${stageLabel.toLowerCase()} ${state.completed}/${state.total_stages}`;
   body.appendChild(sum);
 
@@ -221,9 +225,11 @@ async function refreshFiles() {
 
 function updateRunButton() {
   const btn = document.getElementById("btn-run");
-  btn.textContent = currentStage
-    ? `Run tests for ${stageLabel.toLowerCase()} ${currentStage}`
-    : "Run tests";
+  // A single-stage format has nothing to disambiguate.
+  btn.textContent =
+    currentStage && totalStages > 1
+      ? `Run tests for ${stageLabel.toLowerCase()} ${currentStage}`
+      : "Run tests";
 }
 
 async function loadStage(n) {
@@ -237,6 +243,9 @@ async function loadStage(n) {
 function renderStageTabs() {
   const nav = document.getElementById("stage-tabs");
   nav.innerHTML = "";
+  // Single-stage formats (one window, no progression) get no tab strip. Keyed
+  // on the TOTAL, so ICA still shows its tabs while only level 1 is unlocked.
+  if (totalStages < 2) return;
   stages.forEach((n) => {
     const b = document.createElement("button");
     b.textContent = `${stageLabel} ${n}`;
@@ -381,8 +390,8 @@ function renderResults(data) {
   const sum = document.createElement("div");
   sum.className = "summary " + (pub.passed ? "ok" : "fail");
   sum.textContent = pub.passed
-    ? `Public tests PASSED (${stageLabel.toLowerCase()}s 1..${currentStage})`
-    : `Public tests FAILED (${stageLabel.toLowerCase()}s 1..${currentStage})`;
+    ? `Public tests PASSED${scopeSuffix()}`
+    : `Public tests FAILED${scopeSuffix()}`;
   body.appendChild(sum);
 
   pub.tests.forEach((t) => body.appendChild(testRow(t)));
@@ -395,6 +404,11 @@ function renderResults(data) {
     body.appendChild(hs);
     h.tests.filter((t) => t.status !== "ok").forEach((t) => body.appendChild(testRow(t)));
   }
+}
+
+// "(levels 1..3)" only means something when stages accumulate.
+function scopeSuffix() {
+  return totalStages > 1 ? ` (${stageLabel.toLowerCase()}s 1..${currentStage})` : "";
 }
 
 function testRow(t) {

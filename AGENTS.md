@@ -1,9 +1,10 @@
 # AGENTS.md
 
 Local, single-user web IDE for practising coding assessments. An assessment **format**
-(see `src/formats/`) owns what a challenge looks like and how it is graded; ICA — four
-progressive levels against one evolving `solution.py` — is currently the only one. See
-`README.md` for user-facing setup and `COMPONENTS.md` for diagrams.
+(see `src/formats/`) owns what a challenge looks like and how it is graded. Two exist: ICA
+(four progressive levels against one evolving `solution.py`) and python-gym (single-window
+drills whose tests also measure *how* the answer was produced). See `README.md` for
+user-facing setup and `COMPONENTS.md` for diagrams.
 
 **This file is the single source of truth for every coding agent.** `CLAUDE.md`,
 `GEMINI.md` and `.github/copilot-instructions.md` are pointers to it — put instructions
@@ -22,9 +23,10 @@ cost nothing until they are needed. Read the whole file before starting the task
 
 ## Stack
 
-Python 3.10+ (3.12 in `.venv`), Flask as the only third-party dependency, stdlib
-`sqlite3` for state. Frontend is plain HTML/CSS/JS with no build step and no
-`package.json`; Monaco, marked and Split.js come from CDNs in `ui/index.html`.
+Python 3.10+ (3.12 in `.venv`), Flask for the app and stdlib `sqlite3` for state, plus
+whatever a format needs (Django, for python-gym). Frontend is plain HTML/CSS/JS with no
+build step and no `package.json`; Monaco, marked and Split.js come from CDNs in
+`ui/index.html`.
 
 ## Layout
 
@@ -35,6 +37,7 @@ src/test_harness.py        subprocess: runs unittest modules -> JSON on stdout
 src/runs.py                attempt persistence (timer, progress, code snapshot)
 src/formats/__init__.py    format registry + the contract every format implements
 src/formats/ica.py         ALL ICA specifics: levels, public/hidden pairs, solution.py
+src/formats/python_gym.py  single-stage drills; hidden failures report the name only
 ui/                        formats/challenges/attempts pages + index.html+app.js (the IDE)
 challenges/<format>/<id>/  one challenge; both names are URL segments
 prompt.md                  authoring spec for ICA challenges (pt-BR)
@@ -48,7 +51,13 @@ for ICA). It never learns a format's vocabulary: the format exports `STAGE_LABEL
 **Adding a format**: write `src/formats/<format>.py` implementing the contract documented
 in `src/formats/__init__.py`, add its id to `_CANDIDATES` there, and drop challenge
 folders under `challenges/<format>/`. Nothing else — challenges are discovered by their
-`challenge.json`, and every route already carries the format segment.
+`challenge.json`, and every route already carries the format segment. A single-stage format
+just returns `[1]` from `stages()`; the UI drops its tab strip on its own.
+
+A python-gym challenge folder holds `challenge.json`, `task.md`, `solution_template.py`,
+`public_tests.py`, `hidden_tests.py` and `gym_harness.py` — the last one is where the
+challenge declares its own database (today an in-memory SQLite built from the candidate's
+models), which is why a challenge that needs no database simply has no such file.
 
 An ICA challenge folder holds `challenge.json` (`title`, `timebox_minutes`),
 `solution_template.py`, `solution.py`, and per level `level_N.md`,
@@ -84,6 +93,7 @@ To run a challenge's tests without the server:
 
 ```bash
 cd challenges/ica/<id> && PYTHONPATH=. python ../../../src/test_harness.py level_1_public_tests
+cd challenges/python-gym/<id> && PYTHONPATH=. python ../../../src/test_harness.py public_tests
 ```
 
 ## Invariants — do not break these
@@ -101,6 +111,13 @@ cd challenges/ica/<id> && PYTHONPATH=. python ../../../src/test_harness.py level
   only inside `run_stage` right before the tests execute.
 - **The gate is the format's call.** `run_stage` returns `passed`; `main.py` must not
   reimplement it. For ICA that means all public AND hidden tests for stages 1..N.
+- **The harness runs each test case individually** (for definition order and a per-case
+  time budget), which bypasses unittest's class-level fixtures: `setUpClass` and
+  `tearDownClass` never run. Put per-class setup in `setUp` behind an idempotent guard,
+  the way `gym_harness.py` creates its tables.
+- **How much of a hidden failure reaches the browser is the format's call.** python-gym
+  strips `message`/`output` from hidden records (a traceback prints the failing source
+  line, handing over the fixtures); ICA does not, and its hidden tracebacks are visible.
 - **The harness contract**: `test_harness.py` prints exactly one JSON object on stdout.
   Anything else printed there corrupts the result — test/solution output is captured
   and attached per test as `output`.
@@ -109,7 +126,10 @@ cd challenges/ica/<id> && PYTHONPATH=. python ../../../src/test_harness.py level
 
 ## Conventions
 
-- Stdlib-only outside of Flask. Challenges must not use network, DBs or frameworks.
+- The core (`main.py`, `runner_core.py`, `runs.py`, `test_harness.py`) is stdlib + Flask.
+  A **format** may declare its own dependency — python-gym needs Django — and the registry
+  lists it as unavailable, with the reason, when the import fails. ICA challenges remain
+  stdlib-only: no network, DBs or frameworks.
 - Module docstrings explain the *why*; keep them accurate when behaviour changes.
 - Backend: type hints on signatures, small functions, `abort(404)` for unknown
   formats/challenges/runs. Format modules take `cdir` (the challenge directory) and

@@ -1,7 +1,8 @@
 # Components
 
-How the pieces fit together. The core is format-agnostic; an assessment format (ICA
-today) plugs into it. See `README.md` for setup and `AGENTS.md` for working rules.
+How the pieces fit together. The core is format-agnostic; assessment formats (ICA and
+python-gym today) plug into it. See `README.md` for setup and `AGENTS.md` for working
+rules.
 
 ## System overview
 
@@ -21,7 +22,7 @@ graph TB
     end
 
     subgraph core["src/"]
-        fmt["formats/ica.py<br/>stages · file whitelist<br/>grading"]
+        fmt["formats/*.py<br/>ica · python_gym<br/>stages · whitelist · grading"]
         runner["runner_core.py<br/>discovery · subprocess runner"]
         runs["runs.py<br/>attempts: timer · progress<br/>code snapshot"]
         harness["test_harness.py<br/>unittest → JSON"]
@@ -55,7 +56,7 @@ is given; it never decides access.
 | Component | Owns | Never does |
 |---|---|---|
 | `main.py` | Routing, stage gating, read-only enforcement, response shapes | Anything format-specific — no filenames, no "level" |
-| `formats/ica.py` | Level layout, which files are visible, the pass/fail gate | Persistence, HTTP, knowing where the library lives |
+| `formats/*.py` | The challenge layout, which files are visible, the pass/fail gate, how much of a hidden failure is reported | Persistence, HTTP, knowing where the library lives |
 | `runner_core.py` | Format + challenge discovery, spawning the harness | Persistence, format vocabulary |
 | `runs.py` | Attempt rows: timer, progress, code snapshot, schema migration | Anything HTTP-aware |
 | `test_harness.py` | Isolated subprocess: per-case time budget, output capture, JSON | Touching the DB |
@@ -116,20 +117,26 @@ and is simply flagged as over time. Completed attempts are read-only, enforced s
 
 ```mermaid
 graph LR
-    lib["challenges/"] --> f["&lt;format&gt;/<br/><i>ica</i>"]
-    f --> c["&lt;challenge_id&gt;/<br/><i>both names are URL segments</i>"]
-    c --> meta["challenge.json<br/>title · timebox_minutes"]
-    c --> rest["everything else is<br/>the format's business"]
-    rest --> tpl["solution_template.py<br/>starter, never served"]
-    rest --> sol["solution.py<br/>candidate's code (gitignored)"]
-    rest --> lvl["level_N.md<br/>statement"]
-    rest --> pub["level_N_public_tests.py<br/>shown read-only"]
-    rest --> hid["level_N_hidden_tests.py<br/>results only"]
+    lib["challenges/"] --> ica["ica/"]
+    lib --> gym["python-gym/"]
+
+    ica --> c1["&lt;challenge_id&gt;/"]
+    c1 --> meta1["challenge.json"]
+    c1 --> l1["level_N.md · level_N_public_tests.py<br/>level_N_hidden_tests.py"]
+    c1 --> t1["solution_template.py · solution.py"]
+
+    gym --> c2["&lt;challenge_id&gt;/"]
+    c2 --> meta2["challenge.json"]
+    c2 --> l2["task.md · public_tests.py<br/>hidden_tests.py"]
+    c2 --> t2["solution_template.py · solution.py"]
+    c2 --> h2["gym_harness.py<br/>the challenge's own database"]
 ```
 
-Only `challenge.json` is a core requirement; the ICA layout below it is defined by
-`formats/ica.py`, which discovers levels by globbing `level_*_public_tests.py`. Adding a
-challenge means creating a folder — there is no list to maintain anywhere.
+Only `challenge.json` is a core requirement — everything below it is the format's business,
+which is why the two branches have different shapes. A challenge that needs a database
+declares it itself (`gym_harness.py` builds an in-memory SQLite from the candidate's
+models), so it can never reach `progress.db`. Adding a challenge means creating a folder;
+there is no list to maintain anywhere.
 
 ## Trust boundaries
 
@@ -138,7 +145,7 @@ challenge means creating a folder — there is no list to maintain anywhere.
 | Statements of unlocked stages | Statements of locked stages |
 | Public test sources | Hidden test sources |
 | Your `solution.py` | `solution_template.py` |
-| Hidden test *results* (names + status) | — |
+| Hidden test *results* (names + status) | Hidden failure messages — for python-gym, which strips them; ICA still sends its tracebacks |
 
 Enforced by the format's `read_file` whitelist (for ICA, `solution` and `public-<n>` are
 the only addressable file ids) plus per-stage checks in `main.py`. Candidate code runs in

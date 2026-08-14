@@ -270,3 +270,9 @@ a.brand:hover { color: #fff; }
   font-size: 13px;
   line-height: 1.45;
 }
+
+.challenge-card.unavailable {
+  opacity: 0.55;
+  cursor: default;
+  border-style: dashed;
+}

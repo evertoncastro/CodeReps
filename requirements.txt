@@ -1,3 +1,8 @@
-# Runner core (main.py) uses only the stdlib.
-# The local web IDE (ui.py) needs:
+# The core (main.py, runner_core.py, runs.py) uses only the stdlib.
+# The local web IDE needs:
 flask>=3.0
+
+# Assessment formats may declare their own dependencies. A format whose imports
+# fail is skipped: it shows on the home page as unavailable instead of breaking
+# the app. Django powers the python-gym ORM challenges.
+django>=5.0

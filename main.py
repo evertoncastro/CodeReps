@@ -125,6 +125,9 @@ def ide(fmt: str, challenge: str, run_id: int):
 def formats_list():
     out = []
     for info in formats.infos():
+        if not info["available"]:
+            out.append({**info, "challenges": 0, "attempts": 0})
+            continue
         challenges = core.list_challenges(info["id"])
         attempts = sum(runs.summary(info["id"], c["id"])["attempts"] for c in challenges)
         out.append({**info, "challenges": len(challenges), "attempts": attempts})
