@@ -38,8 +38,10 @@ graph TB
     api --> gate
     gate --> fmt
     gate --> runs
-    fmt --> runner
+    gate -->|"discovery"| runner
+    fmt -->|"run_modules"| runner
     runner -->|"subprocess"| harness
+    runner -->|"reads challenge.json"| lib
     fmt -->|"read/write"| lib
     harness -->|"imports solution.py"| lib
     runs -->|"read/write"| db

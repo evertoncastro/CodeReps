@@ -45,9 +45,9 @@ The core speaks **stages** — a stage is whatever unit of work a format defines
 for ICA). It never learns a format's vocabulary: the format exports `STAGE_LABEL`
 ("Level") and the UI renders that.
 
-**Adding a format**: write `src/formats/<id>.py` implementing the contract documented in
-`src/formats/__init__.py`, add its id to `_CANDIDATES` there, and drop challenge folders
-under `challenges/<id>/`. Nothing else — challenges are discovered by their
+**Adding a format**: write `src/formats/<format>.py` implementing the contract documented
+in `src/formats/__init__.py`, add its id to `_CANDIDATES` there, and drop challenge
+folders under `challenges/<format>/`. Nothing else — challenges are discovered by their
 `challenge.json`, and every route already carries the format segment.
 
 An ICA challenge folder holds `challenge.json` (`title`, `timebox_minutes`),

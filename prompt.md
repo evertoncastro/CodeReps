@@ -10,7 +10,7 @@ de tecnologia, para treino pessoal.
 ## Características do assessment
 
 * Implementado em Python.
-* Um único sistema que evolui (uma solução em `challenge_library/solution.py`).
+* Um único sistema que evolui (uma solução no `solution.py` do desafio).
 * Exatamente 4 níveis progressivos.
 * Revela um nível por vez. NUNCA revele requisitos de níveis futuros antes de o
   candidato passar o nível atual.
@@ -66,7 +66,7 @@ challenges/
 ```
 
 Os módulos de teste são módulos top-level (sem pacote/`__init__.py`), rodados com
-`cwd=challenge_library`. No Level 1, o starter da interface também é gravado em
+`cwd` na pasta do desafio. No Level 1, o starter da interface também é gravado em
 `solution.py` para o candidato começar. Nos níveis seguintes, descreva os novos
 métodos no `level_N.md` (o candidato estende o mesmo `solution.py`).
 
